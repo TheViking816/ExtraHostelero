@@ -36,3 +36,7 @@ yarn-error.log*
 .eslintcache
 *.tsbuildinfo
 .vite
+
+# Windows reserved names
+nul
+NUL

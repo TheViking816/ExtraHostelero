@@ -6,6 +6,136 @@
 3. [Lógica del Alta Flash](#3-lógica-del-alta-flash)
 4. [Monetización con Stripe](#4-monetización-con-stripe)
 5. [Despliegue en Vercel](#5-despliegue-en-vercel)
+6. [Nuevas Funcionalidades v2.0](#6-nuevas-funcionalidades-v20)
+
+---
+
+## 6. Nuevas Funcionalidades v2.0
+
+### 6.1 Tipos de Oferta: Extra vs Prueba
+
+La app ahora diferencia entre dos tipos de ofertas:
+
+| Tipo | Descripción | Flujo |
+|------|-------------|-------|
+| **EXTRA** | Cubrir un hueco puntual | Swipe rápido para aplicar |
+| **PRUEBA** | Proceso de selección con posible contratación | Formulario completo de candidatura |
+
+#### Campos nuevos en tabla `jobs`:
+```sql
+job_type job_type DEFAULT 'extra'  -- 'extra' o 'prueba'
+evaluation_criteria TEXT[]         -- Criterios de evaluación para pruebas
+possible_hire BOOLEAN              -- Si hay posibilidad de contratación
+deleted_at TIMESTAMPTZ             -- Soft delete para ofertas
+```
+
+### 6.2 Sistema de Aplicaciones Mejorado
+
+Cuando un candidato aplica a una oferta:
+1. Se guarda en tabla `applications` con todos sus datos
+2. Se envía notificación automática al local (trigger)
+3. El local puede ver, aceptar o rechazar candidatos
+4. Al aceptar: se notifica al candidato y se rechaza al resto
+
+#### Campos nuevos en tabla `applications`:
+```sql
+cover_letter TEXT          -- Carta de presentación
+cv_snapshot_url TEXT       -- URL del CV
+phone_number TEXT          -- Teléfono de contacto
+photo_url TEXT             -- Foto del candidato
+experience_summary TEXT    -- Resumen de experiencia
+availability_note TEXT     -- Notas de disponibilidad
+```
+
+### 6.3 Sistema de Chat
+
+Nueva tabla `messages` para comunicación directa local-candidato:
+- Chat en tiempo real via Supabase Realtime
+- Mensajes vinculados a job específico (opcional)
+- Estado de lectura
+- Tabla auxiliar `conversations` para agrupar chats
+
+### 6.4 Pool de Favoritos
+
+Los locales pueden marcar staff como "favorito":
+- Se actualiza automáticamente al completar turnos
+- Contador de veces trabajados juntos
+- Los favoritos aparecen primero en búsquedas
+
+```sql
+CREATE TABLE favorites (
+  local_id UUID,
+  staff_id UUID,
+  times_worked_together INTEGER DEFAULT 1,
+  last_worked_together TIMESTAMPTZ
+);
+```
+
+### 6.5 Carnet Digital de Hostelería
+
+Cada staff tiene un carnet digital verificable:
+- ID único generado automáticamente
+- QR escaneable para verificación
+- Muestra: turnos, rating, fiabilidad, certificaciones
+- Indica si es favorito de X locales
+
+#### Campos en `profiles`:
+```sql
+carnet_digital_id TEXT     -- Ej: "EH-ABC12345-2411"
+carnet_qr_code TEXT        -- URL de verificación
+verified_skills TEXT[]     -- Habilidades verificadas
+certifications TEXT[]      -- Certificaciones
+```
+
+### 6.6 Sistema de Certificaciones
+
+Staff puede subir y verificar certificaciones:
+- Manipulador de alimentos
+- Alérgenos
+- PRL Hostelería
+- Sommelier, Barista, etc.
+
+```sql
+CREATE TABLE staff_certifications (
+  staff_id UUID,
+  certification_type TEXT,
+  document_url TEXT,
+  verified BOOLEAN,
+  expires_at DATE
+);
+```
+
+### 6.7 Edición de Perfil Completa
+
+Staff puede editar:
+- Datos personales
+- Habilidades
+- CV en texto
+- Bio
+- Tarifa mínima
+
+### 6.8 Eliminación de Ofertas
+
+Los locales pueden eliminar ofertas (soft delete):
+- Se marca `deleted_at` con timestamp
+- Se cambia status a 'cancelled'
+- No aparece en búsquedas pero se mantiene historial
+
+---
+
+## Migración a v2.0
+
+Ejecutar el script SQL de migración:
+```
+supabase/migrations/002_enhanced_features.sql
+```
+
+Este script añade:
+- Nuevos campos a tablas existentes
+- Nuevas tablas (messages, favorites, certifications, etc.)
+- Triggers para notificaciones automáticas
+- Funciones RPC para estadísticas del carnet
+- Políticas RLS para nuevas tablas
 
 ---
 
