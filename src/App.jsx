@@ -798,27 +798,54 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
     // Validar que sea PDF o documento
     const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
     if (!allowedTypes.includes(file.type)) {
-      alert('Solo se permiten archivos PDF o Word');
+      alert('❌ Solo se permiten archivos PDF o Word (.pdf, .doc, .docx)');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) { // 10MB máximo
+      alert('❌ El archivo no puede ser mayor a 10MB');
       return;
     }
 
     setUploadingCV(true);
     try {
-      const fileName = `${profile.id}/${Date.now()}_${file.name}`;
+      // Construir ruta: userid_timestamp_filename
+      const fileExt = file.name.split('.').pop();
+      const timestamp = Date.now();
+      const fileName = `${profile.id}_${timestamp}_${file.name}`;
 
-      const { error: uploadError } = await supabase.storage
+      console.log('Uploading CV to:', fileName);
+
+      // Subir archivo
+      const { data, error: uploadError } = await supabase.storage
         .from('cvs')
-        .upload(fileName, file, { upsert: true });
+        .upload(fileName, file, { 
+          cacheControl: '3600',
+          upsert: false 
+        });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(`Error al subir: ${uploadError.message}`);
+      }
 
-      const { data } = supabase.storage.from('cvs').getPublicUrl(fileName);
-      const cvUrl = data?.publicUrl;
+      console.log('Upload successful:', data);
 
-      setFormData(prev => ({ ...prev, cv_url: cvUrl }));
-      alert('CV subido correctamente!');
+      // Obtener URL pública
+      const { data: urlData } = supabase.storage
+        .from('cvs')
+        .getPublicUrl(fileName);
+
+      if (!urlData?.publicUrl) {
+        throw new Error('No se pudo obtener URL del archivo');
+      }
+
+      console.log('Public URL:', urlData.publicUrl);
+      setFormData(prev => ({ ...prev, cv_url: urlData.publicUrl }));
+      alert('✅ CV subido correctamente!');
     } catch (err) {
-      alert('Error al subir CV: ' + err.message);
+      console.error('CV upload error:', err);
+      alert('❌ Error al subir CV: ' + err.message);
     } finally {
       setUploadingCV(false);
     }
