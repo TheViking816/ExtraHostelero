@@ -1573,10 +1573,12 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [applications, setApplications] = useState([]);
+  const [acceptedApplications, setAcceptedApplications] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [activeTab, setActiveTab] = useState('jobs');
   const [chatWith, setChatWith] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [formData, setFormData] = useState({
     role: 'camarero', date: new Date().toISOString().split('T')[0],
     startTime: '20:00', endTime: '02:00', hourlyRate: 12,
@@ -1587,6 +1589,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   useEffect(() => {
     loadJobs();
     loadFavorites();
+    loadAcceptedApplications();
     loadNotifications();
 
     const channel = supabase.channel('local-realtime')
@@ -1626,6 +1629,28 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
       .select('staff_id')
       .eq('local_id', user.id);
     if (data) setFavorites(data.map(f => f.staff_id));
+  };
+
+  const loadAcceptedApplications = async () => {
+    // Primero, obtener todos los job_ids del local actual
+    const { data: jobIds } = await supabase
+      .from('jobs')
+      .select('id')
+      .eq('local_id', user.id);
+    
+    if (!jobIds || jobIds.length === 0) {
+      setAcceptedApplications([]);
+      return;
+    }
+
+    // Luego, obtener todas las aplicaciones aceptadas para esos jobs
+    const { data } = await supabase
+      .from('applications')
+      .select(`*, staff:profiles!applications_staff_id_fkey(*), job:jobs(id, role_required)`)
+      .in('job_id', jobIds.map(j => j.id))
+      .eq('status', 'accepted')
+      .order('created_at', { ascending: false });
+    if (data) setAcceptedApplications(data);
   };
 
   const loadNotifications = async () => {
@@ -1718,6 +1743,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     alert('Candidato aceptado!');
     setSelectedJob(null);
     loadJobs();
+    loadAcceptedApplications();
   };
 
   const handleRejectApplication = async (applicationId) => {
@@ -1762,7 +1788,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="p-2 bg-slate-700 rounded-full relative">
+            <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-slate-700 rounded-full relative hover:bg-slate-600">
               <Bell size={20} className="text-slate-400" />
               {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{notifications.length}</span>}
             </button>
@@ -1826,6 +1852,36 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
               </div>
             </div>
           </button>
+
+          {/* Candidatos Aceptados */}
+          {acceptedApplications.length > 0 && (
+            <div className="bg-gradient-to-br from-emerald-900 to-brand-navy-light rounded-2xl p-5 mb-6 border border-emerald-700">
+              <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+                <CheckCircle size={18} className="text-emerald-400" />
+                Candidatos Aceptados ({acceptedApplications.length})
+              </h3>
+              <div className="space-y-3">
+                {acceptedApplications.map(app => (
+                  <div key={app.id} className="bg-slate-800 rounded-xl p-4 flex items-center justify-between hover:bg-slate-700 transition">
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-10 h-10 bg-brand-orange rounded-full flex items-center justify-center text-white font-bold">{app.staff?.full_name?.charAt(0)}</div>
+                      <div className="flex-1">
+                        <p className="text-white font-medium">{app.staff?.full_name}</p>
+                        <p className="text-slate-400 text-xs">{ROLES[app.job?.role_required]?.label || 'Posición'}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setChatWith({ id: app.staff?.id, name: app.staff?.full_name })}
+                      className="px-4 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition text-sm font-medium flex items-center gap-2"
+                    >
+                      <MessageCircle size={16} />
+                      Chat
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Lista de ofertas */}
           <div className="bg-brand-navy-light rounded-2xl p-5">
@@ -1959,6 +2015,36 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
 
           <button type="button" onClick={() => setShowForm(false)} className="w-full text-slate-400 py-3">Cancelar</button>
         </form>
+      )}
+
+      {/* Modal de Notificaciones */}
+      {showNotifications && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-start justify-end pt-20 pr-4">
+          <div className="bg-brand-navy-light rounded-2xl w-full max-w-sm max-h-[60vh] overflow-auto shadow-2xl">
+            <div className="p-4 border-b border-slate-700 sticky top-0 bg-brand-navy-light">
+              <h2 className="text-white font-bold flex items-center gap-2">
+                <Bell size={18} className="text-brand-orange" />
+                Notificaciones ({notifications.length})
+              </h2>
+            </div>
+            {notifications.length === 0 ? (
+              <div className="text-center py-12 p-4">
+                <Bell size={40} className="mx-auto text-slate-600 mb-2" />
+                <p className="text-slate-500">Sin notificaciones</p>
+              </div>
+            ) : (
+              <div className="space-y-2 p-4">
+                {notifications.map(notif => (
+                  <div key={notif.id} className="bg-slate-800 rounded-xl p-3 border-l-4 border-brand-orange hover:bg-slate-700 transition">
+                    <p className="text-white font-medium text-sm">{notif.title}</p>
+                    <p className="text-slate-400 text-xs mt-1">{notif.body}</p>
+                    <p className="text-slate-500 text-xs mt-2">{formatDateTime(notif.created_at)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
