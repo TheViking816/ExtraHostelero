@@ -493,6 +493,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -507,7 +508,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 
   const loadMessages = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('messages')
       .select('*')
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
@@ -515,15 +516,20 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
       .limit(100);
 
     if (data) setMessages(data);
+    if (error) console.error('Error loading messages:', error);
     setLoading(false);
 
     // Marcar como leidos
-    await supabase
-      .from('messages')
-      .update({ read_at: new Date().toISOString() })
-      .eq('receiver_id', userId)
-      .eq('sender_id', otherUserId)
-      .is('read_at', null);
+    if (data && data.length > 0) {
+      const { error: updateError } = await supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('receiver_id', userId)
+        .eq('sender_id', otherUserId)
+        .is('read_at', null);
+      
+      if (updateError) console.error('Error marking as read:', updateError);
+    }
   };
 
   const subscribeToMessages = () => {
@@ -538,7 +544,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
         if (payload.new.sender_id === otherUserId) {
           setMessages(prev => [...prev, payload.new]);
           // Marcar como leido
-          supabase.from('messages').update({ read_at: new Date().toISOString() }).eq('id', payload.new.id);
+          supabase.from('messages').update({ read_at: new Date().toISOString() }).eq('id', payload.new.id).then();
         }
       })
       .subscribe();
@@ -548,18 +554,39 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    const message = {
-      sender_id: userId,
-      receiver_id: otherUserId,
-      job_id: jobId,
-      content: newMessage.trim(),
-      message_type: 'text'
-    };
-
+    setSending(true);
+    const messageContent = newMessage.trim();
     setNewMessage('');
 
-    const { data, error } = await supabase.from('messages').insert(message).select().single();
-    if (data) setMessages(prev => [...prev, data]);
+    try {
+      const message = {
+        sender_id: userId,
+        receiver_id: otherUserId,
+        job_id: jobId || null,
+        content: messageContent,
+        message_type: 'text'
+      };
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([message])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error sending message:', error);
+        setNewMessage(messageContent); // Restaurar el mensaje para reintentar
+        alert('Error al enviar mensaje: ' + error.message);
+      } else if (data) {
+        setMessages(prev => [...prev, data]);
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      setNewMessage(messageContent);
+      alert('Error al enviar mensaje');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -614,15 +641,16 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl outline-none"
+            disabled={sending}
+            className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl outline-none disabled:opacity-50"
             placeholder="Escribe un mensaje..."
           />
           <button
             type="submit"
-            disabled={!newMessage.trim()}
-            className="bg-brand-orange text-white p-3 rounded-xl disabled:opacity-50"
+            disabled={!newMessage.trim() || sending}
+            className="bg-brand-orange text-white p-3 rounded-xl disabled:opacity-50 flex items-center justify-center"
           >
-            <Send size={20} />
+            {sending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
           </button>
         </div>
       </form>
@@ -742,6 +770,7 @@ const CarnetDigital = ({ profile, stats, onClose }) => {
 // ============================================
 const EditProfileModal = ({ profile, onSave, onClose }) => {
   const [loading, setLoading] = useState(false);
+  const [uploadingCV, setUploadingCV] = useState(false);
   const [formData, setFormData] = useState({
     full_name: profile?.full_name || '',
     phone: profile?.phone || '',
@@ -750,6 +779,7 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
     skills: profile?.skills || [],
     hourly_rate_min: profile?.hourly_rate_min || 10,
     cv_text: profile?.cv_text || '',
+    cv_url: profile?.cv_url || '',
   });
 
   const toggleSkill = (skill) => {
@@ -759,6 +789,39 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
         ? prev.skills.filter(s => s !== skill)
         : [...prev.skills, skill]
     }));
+  };
+
+  const handleCVUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validar que sea PDF o documento
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Solo se permiten archivos PDF o Word');
+      return;
+    }
+
+    setUploadingCV(true);
+    try {
+      const fileName = `${profile.id}/${Date.now()}_${file.name}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cvs')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('cvs').getPublicUrl(fileName);
+      const cvUrl = data?.publicUrl;
+
+      setFormData(prev => ({ ...prev, cv_url: cvUrl }));
+      alert('CV subido correctamente!');
+    } catch (err) {
+      alert('Error al subir CV: ' + err.message);
+    } finally {
+      setUploadingCV(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -840,7 +903,33 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
       </div>
 
       <div className="bg-brand-navy-light rounded-xl p-4">
-        <label className="text-slate-400 text-sm mb-2 block">CV / Experiencia detallada</label>
+        <label className="text-slate-400 text-sm mb-3 block">Subir CV (PDF o Word)</label>
+        <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:border-brand-orange transition-colors">
+          <Upload size={24} className="text-brand-orange mb-2" />
+          <span className="text-white font-medium">{uploadingCV ? 'Subiendo...' : 'Selecciona tu CV'}</span>
+          <span className="text-slate-400 text-xs mt-1">PDF, DOC o DOCX</span>
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx"
+            onChange={handleCVUpload}
+            disabled={uploadingCV}
+            className="hidden"
+          />
+        </label>
+        {formData.cv_url && (
+          <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2">
+            <FileText size={18} className="text-emerald-400" />
+            <div className="flex-1">
+              <p className="text-emerald-400 text-sm font-medium">CV subido correctamente</p>
+              <p className="text-slate-400 text-xs">Se enviará automáticamente en candidaturas</p>
+            </div>
+            <CheckCircle size={18} className="text-emerald-400" />
+          </div>
+        )}
+      </div>
+
+      <div className="bg-brand-navy-light rounded-xl p-4">
+        <label className="text-slate-400 text-sm mb-2 block">CV / Experiencia detallada (texto)</label>
         <textarea
           value={formData.cv_text}
           onChange={(e) => setFormData({ ...formData, cv_text: e.target.value })}
@@ -874,6 +963,151 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
         >
           {loading && <Loader2 size={18} className="animate-spin" />}
           Guardar
+        </button>
+      </div>
+    </form>
+  );
+};
+
+// ============================================
+// MODAL DE RESEÑA / PUNTUACIÓN
+// ============================================
+const ReviewModal = ({ job, candidateName, onSubmit, onClose }) => {
+  const [loading, setLoading] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [metrics, setMetrics] = useState({
+    punctuality: 5,
+    professionalism: 5,
+    skills: 5,
+    communication: 5
+  });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onSubmit({ rating, comment, ...metrics });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="bg-slate-800 rounded-xl p-4">
+        <p className="text-white font-medium mb-1">Puntuando a</p>
+        <p className="text-brand-orange text-lg font-bold">{candidateName}</p>
+        <p className="text-slate-400 text-sm">{job.role_required}</p>
+      </div>
+
+      <div className="bg-brand-navy-light rounded-xl p-4 space-y-4">
+        <div>
+          <label className="text-slate-400 text-sm mb-3 block">Calificación General (1-5 estrellas)</label>
+          <div className="flex justify-between">
+            {[1, 2, 3, 4, 5].map(star => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setRating(star)}
+                className={`text-2xl transition-transform ${star <= rating ? 'text-yellow-400' : 'text-slate-600'}`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-slate-400 text-sm mb-2 block">Puntualidad</label>
+          <input
+            type="range"
+            min="1"
+            max="5"
+            value={metrics.punctuality}
+            onChange={(e) => setMetrics({ ...metrics, punctuality: parseInt(e.target.value) })}
+            className="w-full accent-brand-orange"
+          />
+          <div className="flex justify-between text-xs text-slate-400 mt-1">
+            <span>1</span>
+            <span className="font-bold">{metrics.punctuality}</span>
+            <span>5</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-slate-400 text-sm mb-2 block">Profesionalidad</label>
+          <input
+            type="range"
+            min="1"
+            max="5"
+            value={metrics.professionalism}
+            onChange={(e) => setMetrics({ ...metrics, professionalism: parseInt(e.target.value) })}
+            className="w-full accent-brand-orange"
+          />
+          <div className="flex justify-between text-xs text-slate-400 mt-1">
+            <span>1</span>
+            <span className="font-bold">{metrics.professionalism}</span>
+            <span>5</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-slate-400 text-sm mb-2 block">Habilidades Técnicas</label>
+          <input
+            type="range"
+            min="1"
+            max="5"
+            value={metrics.skills}
+            onChange={(e) => setMetrics({ ...metrics, skills: parseInt(e.target.value) })}
+            className="w-full accent-brand-orange"
+          />
+          <div className="flex justify-between text-xs text-slate-400 mt-1">
+            <span>1</span>
+            <span className="font-bold">{metrics.skills}</span>
+            <span>5</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-slate-400 text-sm mb-2 block">Comunicación</label>
+          <input
+            type="range"
+            min="1"
+            max="5"
+            value={metrics.communication}
+            onChange={(e) => setMetrics({ ...metrics, communication: parseInt(e.target.value) })}
+            className="w-full accent-brand-orange"
+          />
+          <div className="flex justify-between text-xs text-slate-400 mt-1">
+            <span>1</span>
+            <span className="font-bold">{metrics.communication}</span>
+            <span>5</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-brand-navy-light rounded-xl p-4">
+        <label className="text-slate-400 text-sm mb-2 block">Comentarios (opcional)</label>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          className="w-full bg-slate-700 text-white px-4 py-3 rounded-xl outline-none resize-none h-20"
+          placeholder="¿Lo volverías a contratar? ¿Algo que mejorar?"
+        />
+      </div>
+
+      <div className="flex gap-3">
+        <button type="button" onClick={onClose} className="flex-1 bg-slate-700 text-white py-3 rounded-xl font-medium">
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex-1 bg-brand-orange text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {loading && <Loader2 size={18} className="animate-spin" />}
+          Enviar Reseña
         </button>
       </div>
     </form>
