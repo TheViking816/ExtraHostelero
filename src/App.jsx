@@ -1573,6 +1573,9 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [applications, setApplications] = useState([]);
+  const [jobChats, setJobChats] = useState([]);
+  const [staffProfileView, setStaffProfileView] = useState(null);
+  const [showStaffProfile, setShowStaffProfile] = useState(false);
   const [acceptedApplications, setAcceptedApplications] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [activeTab, setActiveTab] = useState('jobs');
@@ -1602,6 +1605,51 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
 
     return () => { supabase.removeChannel(channel); };
   }, [user.id]);
+
+  const loadJobChats = async (jobId) => {
+    if (!jobId) return setJobChats([]);
+
+    // Obtener los últimos mensajes relacionados con este job donde participa este local
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*, sender:profiles!messages_sender_id_fkey(id,full_name,avatar_url), receiver:profiles!messages_receiver_id_fkey(id,full_name,avatar_url)')
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      console.error('Error loading job chats:', error);
+      return setJobChats([]);
+    }
+
+    // Agrupar por la otra parte (staff) y quedarnos con el último mensaje
+    const map = new Map();
+    (data || []).forEach(m => {
+      const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
+      if (!otherId) return;
+      if (!map.has(otherId)) {
+        map.set(otherId, {
+          otherId,
+          otherName: (m.sender_id === user.id ? m.receiver.full_name : m.sender.full_name) || 'Usuario',
+          otherAvatar: (m.sender_id === user.id ? m.receiver.avatar_url : m.sender.avatar_url) || null,
+          lastMessage: m.content,
+          lastAt: m.created_at,
+        });
+      }
+    });
+
+    setJobChats(Array.from(map.values()));
+  };
+
+  const loadStaffProfile = async (staffId) => {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', staffId).single();
+    if (error) {
+      console.error('Error loading staff profile:', error);
+      return;
+    }
+    setStaffProfileView(data);
+    setShowStaffProfile(true);
+  };
 
   const loadJobs = async () => {
     const { data } = await supabase
@@ -1662,6 +1710,29 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
       .order('created_at', { ascending: false })
       .limit(10);
     if (data) setNotifications(data);
+  };
+
+  const handleToggleNotifications = async (forceClose = false) => {
+    // Si forceClose o ya está abierto, cerramos
+    if (forceClose || showNotifications) {
+      setShowNotifications(false);
+      return;
+    }
+
+    // Al abrir, marcar notificaciones como leídas en backend
+    try {
+      await supabase
+        .from('notifications')
+        .update({ read_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+        .is('read_at', null);
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+
+    // Refrescar localmente (loadNotifications filtra read_at null así quedará vacío)
+    await loadNotifications();
+    setShowNotifications(true);
   };
 
   useEffect(() => {
@@ -1788,7 +1859,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-slate-700 rounded-full relative hover:bg-slate-600">
+            <button onClick={() => handleToggleNotifications()} className="p-2 bg-slate-700 rounded-full relative hover:bg-slate-600">
               <Bell size={20} className="text-slate-400" />
               {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{notifications.length}</span>}
             </button>
@@ -1807,6 +1878,32 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
               <p className="text-slate-400 text-sm"><JobTypeBadge type={selectedJob.job_type} /> {ROLES[selectedJob.role_required]?.label} - {formatDate(selectedJob.shift_date)}</p>
             </div>
           </div>
+
+          {/* Chats para esta oferta (si existen) */}
+          {jobChats.length > 0 && (
+            <div className="bg-slate-800 rounded-2xl p-4 mb-4">
+              <h4 className="text-white font-bold mb-3">Chats relacionados con esta oferta</h4>
+              <div className="space-y-2">
+                {jobChats.map(c => (
+                  <div key={c.otherId} className="flex items-center justify-between bg-slate-900 rounded-lg p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center overflow-hidden">
+                        {c.otherAvatar ? <img src={c.otherAvatar} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-400" />}
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">{c.otherName}</p>
+                        <p className="text-slate-400 text-xs truncate max-w-[260px]">{c.lastMessage}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { setChatWith({ id: c.otherId, name: c.otherName }); }} className="px-3 py-1 bg-brand-orange text-white rounded">Chat</button>
+                      <button onClick={() => loadStaffProfile(c.otherId)} className="px-3 py-1 bg-slate-700 text-slate-200 rounded">Perfil</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {applications.length === 0 ? (
             <div className="text-center py-12">
@@ -1916,7 +2013,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
                         </span>
                         {job.status === 'open' && (
                           <button
-                            onClick={() => { setSelectedJob(job); loadApplications(job.id); }}
+                            onClick={() => { setSelectedJob(job); loadApplications(job.id); loadJobChats(job.id); }}
                             className="text-brand-orange text-sm font-medium flex items-center gap-1"
                           >
                             Ver candidatos <ChevronRight size={16} />
@@ -2019,8 +2116,8 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
 
       {/* Modal de Notificaciones */}
       {showNotifications && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-start justify-end pt-20 pr-4">
-          <div className="bg-brand-navy-light rounded-2xl w-full max-w-sm max-h-[60vh] overflow-auto shadow-2xl">
+        <div onClick={() => handleToggleNotifications(true)} className="fixed inset-0 bg-black/50 z-40 flex items-start justify-end pt-20 pr-4">
+          <div onClick={(e) => e.stopPropagation()} className="bg-brand-navy-light rounded-2xl w-full max-w-sm max-h-[60vh] overflow-auto shadow-2xl">
             <div className="p-4 border-b border-slate-700 sticky top-0 bg-brand-navy-light">
               <h2 className="text-white font-bold flex items-center gap-2">
                 <Bell size={18} className="text-brand-orange" />

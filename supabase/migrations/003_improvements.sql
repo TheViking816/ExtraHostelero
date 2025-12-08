@@ -76,32 +76,32 @@ CREATE OR REPLACE TRIGGER open_review_period_trigger
 CREATE OR REPLACE FUNCTION notify_on_message()
 RETURNS TRIGGER AS $$
 DECLARE
-  v_receiver_user RECORD;
-  v_sender_user RECORD;
-  v_job RECORD;
+  v_sender_name TEXT;
+  v_job_role TEXT;
 BEGIN
-  -- Obtener datos del receptor y del remitente
-  SELECT * INTO v_receiver_user FROM profiles WHERE id = NEW.receiver_id;
-  SELECT * INTO v_sender_user FROM profiles WHERE id = NEW.sender_id;
+  -- Obtener el nombre del remitente de forma segura
+  SELECT full_name INTO v_sender_name FROM profiles WHERE id = NEW.sender_id LIMIT 1;
 
-  -- Si hay un job asociado, obtener su información
+  -- Obtener el role del job (si existe) de forma segura
   IF NEW.job_id IS NOT NULL THEN
-    SELECT * INTO v_job FROM jobs WHERE id = NEW.job_id;
+    SELECT role_required INTO v_job_role FROM jobs WHERE id = NEW.job_id LIMIT 1;
+  ELSE
+    v_job_role := NULL;
   END IF;
 
-  -- Crear notificación para el receptor
+  -- Crear notificación para el receptor usando valores seguros
   INSERT INTO notifications (user_id, type, title, body, data, notification_type)
   VALUES (
     NEW.receiver_id,
     'message_received',
-    'Nuevo mensaje de ' || v_sender_user.full_name,
+    'Nuevo mensaje de ' || COALESCE(v_sender_name, 'Usuario'),
     NEW.content,
     jsonb_build_object(
       'message_id', NEW.id,
       'sender_id', NEW.sender_id,
-      'sender_name', v_sender_user.full_name,
+      'sender_name', COALESCE(v_sender_name, NULL),
       'job_id', NEW.job_id,
-      'job_role', CASE WHEN v_job.id IS NOT NULL THEN v_job.role_required ELSE NULL END
+      'job_role', v_job_role
     ),
     'message_received'
   );
