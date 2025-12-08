@@ -1,4 +1,4 @@
-# ExtraHostelero - Documentación Técnica de Implementación
+# ExtraHostelero - Documentación Técnica de Implementación.
 
 ## Índice
 1. [Arquitectura General](#1-arquitectura-general)
