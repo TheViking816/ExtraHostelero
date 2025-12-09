@@ -393,7 +393,7 @@ const ApplicationForm = ({ job, profile, onSubmit, onClose }) => {
 // ============================================
 // COMPONENTE DE CANDIDATO (para locales)
 // ============================================
-const CandidateCard = ({ application, onAccept, onReject, onChat, onToggleFavorite, isFavorite }) => {
+const CandidateCard = ({ application, onAccept, onReject, onChat, onToggleFavorite, isFavorite, onViewProfile }) => {
   const staff = application.staff;
 
   return (
@@ -459,34 +459,298 @@ const CandidateCard = ({ application, onAccept, onReject, onChat, onToggleFavori
         </div>
       )}
 
-      <div className="flex gap-2">
-        <button
-          onClick={() => onReject(application.id)}
-          className="flex-1 bg-red-500/20 text-red-400 py-2 rounded-xl font-medium flex items-center justify-center gap-1"
-        >
-          <XCircle size={16} />
-          Rechazar
-        </button>
-        <button
-          onClick={() => onChat(staff?.id)}
-          className="flex-1 bg-slate-700 text-white py-2 rounded-xl font-medium flex items-center justify-center gap-1"
-        >
-          <MessageCircle size={16} />
-          Chat
-        </button>
-        <button
-          onClick={() => onAccept(application.id)}
-          className="flex-1 bg-emerald-500 text-white py-2 rounded-xl font-medium flex items-center justify-center gap-1"
-        >
-          <Check size={16} />
-          Aceptar
-        </button>
+      {(onReject || onChat || onViewProfile || onAccept) && (
+        <div className="flex gap-2 flex-wrap">
+          {onReject && (
+            <button
+              onClick={() => onReject(application)}
+              className="flex-1 min-w-[120px] bg-red-500/20 text-red-400 py-2 rounded-xl font-medium flex items-center justify-center gap-1"
+            >
+              <XCircle size={16} />
+              Rechazar
+            </button>
+          )}
+          {onChat && (
+            <button
+              onClick={() => onChat(staff?.id)}
+              className="flex-1 min-w-[120px] bg-slate-700 text-white py-2 rounded-xl font-medium flex items-center justify-center gap-1"
+            >
+              <MessageCircle size={16} />
+              Chat
+            </button>
+          )}
+          {onViewProfile && (
+            <button
+              onClick={() => onViewProfile(staff?.id)}
+              className="flex-1 min-w-[120px] bg-slate-700 text-slate-100 py-2 rounded-xl font-medium flex items-center justify-center gap-1"
+            >
+              <Eye size={16} />
+              Perfil
+            </button>
+          )}
+          {onAccept && (
+            <button
+              onClick={() => onAccept(application)}
+              className="flex-1 min-w-[120px] bg-emerald-500 text-white py-2 rounded-xl font-medium flex items-center justify-center gap-1"
+            >
+              <Check size={16} />
+              Aceptar
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// PERFIL DE STAFF (Modal para locales)
+// ============================================
+const StaffProfileModal = ({ profile, onClose }) => {
+  if (!profile) return null;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-16 bg-slate-700 rounded-full overflow-hidden flex items-center justify-center">
+          {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" /> : <User size={28} className="text-slate-400" />}
+        </div>
+        <div className="flex-1">
+          <h2 className="text-white font-bold text-lg">{profile.full_name}</h2>
+          <p className="text-slate-300 text-sm">{ROLES[profile.staff_role]?.label}</p>
+          <StarRating rating={profile.rating} reviews={profile.total_reviews} />
+        </div>
+      </div>
+
+      {profile.bio && (
+        <div className="bg-slate-800 rounded-xl p-3">
+          <p className="text-white font-semibold text-sm mb-1">Bio</p>
+          <p className="text-slate-300 text-sm">{profile.bio}</p>
+        </div>
+      )}
+
+      {profile.skills?.length > 0 && (
+        <div>
+          <p className="text-white font-semibold text-sm mb-2">Skills</p>
+          <div className="flex flex-wrap gap-2">
+            {profile.skills.slice(0, 12).map(skill => (
+              <span key={skill} className="bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded-full border border-slate-700">{skill}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-3">
+        <Clock size={16} className="text-brand-orange" />
+        <div>
+          <p className="text-white text-sm font-semibold">Tarifa preferida</p>
+          <p className="text-slate-300 text-sm">{profile.hourly_rate_min ? `${profile.hourly_rate_min} - ${profile.hourly_rate_max || profile.hourly_rate_min} EUR/h` : 'No indicada'}</p>
+        </div>
+      </div>
+
+      {profile.city && (
+        <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-3">
+          <MapPin size={16} className="text-brand-orange" />
+          <div>
+            <p className="text-white text-sm font-semibold">Ubicación</p>
+            <p className="text-slate-300 text-sm">{profile.city}{profile.address ? ` · ${profile.address}` : ''}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button onClick={onClose} className="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">Cerrar</button>
       </div>
     </div>
   );
 };
 
 // ============================================
+// REVIEW MODAL
+// ============================================
+const ReviewModal = ({ isOpen, onClose, onSubmit, targetName }) => {
+  const [attended, setAttended] = useState(true);
+  const [rating, setRating] = useState(5);
+  const [punctuality, setPunctuality] = useState(5);
+  const [professionalism, setProfessionalism] = useState(5);
+  const [skills, setSkills] = useState(5);
+  const [communication, setCommunication] = useState(5);
+  const [wouldHireAgain, setWouldHireAgain] = useState(true);
+  const [fairTreatment, setFairTreatment] = useState(true);
+  const [comment, setComment] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({
+      attendancePresent: attended,
+      rating: attended ? rating : 1, // columna rating es NOT NULL y el check exige >=1
+      punctuality: attended ? punctuality : null,
+      professionalism: attended ? professionalism : null,
+      skills: attended ? skills : null,
+      communication: attended ? communication : null,
+      wouldHireAgain: attended ? wouldHireAgain : null,
+      fairTreatment: attended ? fairTreatment : null,
+      comment
+    });
+  };
+
+  if (!isOpen) return null;
+
+  const renderScoreRow = (label, value, setter) => (
+    <div className={`flex items-center justify-between gap-2 ${!attended ? 'opacity-50 pointer-events-none' : ''}`}>
+      <span className="text-slate-200 text-sm">{label}</span>
+      <div className="flex gap-1">
+        {[1,2,3,4,5].map(v => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setter(v)}
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${value >= v ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300'}`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-white font-semibold">Valorar a {targetName}</p>
+          <p className="text-slate-400 text-sm">Indica si se presentó y, si procede, puntúa cada apartado.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAttended(!attended)}
+          className={`px-3 py-2 rounded-lg text-sm border ${attended ? 'bg-emerald-500/20 border-emerald-500 text-emerald-100' : 'bg-red-500/20 border-red-500 text-red-100'}`}
+        >
+          {attended ? 'Se presentó' : 'No se presentó'}
+        </button>
+      </div>
+
+      {renderScoreRow('Valoración general', rating, setRating)}
+      {renderScoreRow('Puntualidad', punctuality, setPunctuality)}
+      {renderScoreRow('Profesionalidad', professionalism, setProfessionalism)}
+      {renderScoreRow('Habilidades', skills, setSkills)}
+      {renderScoreRow('Comunicación', communication, setCommunication)}
+
+      {!attended && (
+        <div className="text-amber-300 text-sm bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+          No se presentó, no se valoran otros aspectos.
+        </div>
+      )}
+
+      <div className={`grid grid-cols-2 gap-3 ${!attended ? 'opacity-50 pointer-events-none' : ''}`}>
+        <button
+          type="button"
+          onClick={() => setWouldHireAgain(!wouldHireAgain)}
+          className={`px-3 py-2 rounded-lg text-sm flex items-center justify-between border ${wouldHireAgain ? 'bg-emerald-500/20 border-emerald-500 text-emerald-100' : 'bg-slate-800 border-slate-700 text-slate-200'}`}
+        >
+          <span>Volvería a contratar</span>
+          <Check size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setFairTreatment(!fairTreatment)}
+          className={`px-3 py-2 rounded-lg text-sm flex items-center justify-between border ${fairTreatment ? 'bg-emerald-500/20 border-emerald-500 text-emerald-100' : 'bg-slate-800 border-slate-700 text-slate-200'}`}
+        >
+          <span>Trato justo</span>
+          <Check size={14} />
+        </button>
+      </div>
+
+      <textarea
+        className="w-full bg-slate-800 text-white rounded-xl p-3 border border-slate-700"
+        rows={4}
+        placeholder="Comentario (opcional)"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">Cancelar</button>
+        <button onClick={handleSubmit} className="px-4 py-2 bg-brand-orange text-white rounded-lg">Enviar valoraci?n</button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// REVIEW LOCAL (staff -> local)
+// ============================================
+const LocalReviewModal = ({ isOpen, onClose, onSubmit, targetName }) => {
+  const [rating, setRating] = useState(5);
+  const [fairTreatment, setFairTreatment] = useState(true);
+  const [wouldReturn, setWouldReturn] = useState(true);
+  const [comment, setComment] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit({
+      rating,
+      fairTreatment,
+      wouldReturn,
+      comment
+    });
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-white font-semibold">Valorar al local {targetName}</p>
+        <p className="text-slate-400 text-sm">Da una puntuacion general y dinos si el trato fue justo.</p>
+      </div>
+
+      <div className="flex gap-2">
+        {[1,2,3,4,5].map(v => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setRating(v)}
+            className={`w-10 h-10 rounded-full flex items-center justify-center ${rating >= v ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300'}`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => setFairTreatment(!fairTreatment)}
+          className={`px-3 py-2 rounded-lg text-sm flex items-center justify-between border ${fairTreatment ? 'bg-emerald-500/20 border-emerald-500 text-emerald-100' : 'bg-slate-800 border-slate-700 text-slate-200'}`}
+        >
+          <span>Trato justo</span>
+          <Check size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setWouldReturn(!wouldReturn)}
+          className={`px-3 py-2 rounded-lg text-sm flex items-center justify-between border ${wouldReturn ? 'bg-emerald-500/20 border-emerald-500 text-emerald-100' : 'bg-slate-800 border-slate-700 text-slate-200'}`}
+        >
+          <span>Volveria a trabajar</span>
+          <Check size={14} />
+        </button>
+      </div>
+
+      <textarea
+        className="w-full bg-slate-800 text-white rounded-xl p-3 border border-slate-700"
+        rows={4}
+        placeholder="Comentario (opcional)"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">Cancelar</button>
+        <button onClick={handleSubmit} className="px-4 py-2 bg-brand-orange text-white rounded-lg">Enviar valoracion</button>
+      </div>
+    </div>
+  );
+};
+// ============================================
+// SISTEMA DE CHAT// ============================================
 // SISTEMA DE CHAT
 // ============================================
 const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
@@ -494,23 +758,30 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
+    if (!jobId) {
+      setLoading(false);
+      return;
+    }
     loadMessages();
     const subscription = subscribeToMessages();
     return () => { subscription?.unsubscribe(); };
-  }, [userId, otherUserId]);
+  }, [userId, otherUserId, jobId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const loadMessages = async () => {
+    if (!jobId) return;
     setLoading(true);
     const { data, error } = await supabase
       .from('messages')
       .select('*')
+      .eq('job_id', jobId)
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: true })
       .limit(100);
@@ -526,6 +797,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
         .update({ read_at: new Date().toISOString() })
         .eq('receiver_id', userId)
         .eq('sender_id', otherUserId)
+        .eq('job_id', jobId)
         .is('read_at', null);
       
       if (updateError) console.error('Error marking as read:', updateError);
@@ -533,18 +805,25 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   };
 
   const subscribeToMessages = () => {
+    if (!jobId) return null;
     return supabase
-      .channel(`chat-${userId}-${otherUserId}`)
+      .channel(`chat-${userId}-${otherUserId}-${jobId}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
-        filter: `receiver_id=eq.${userId}`
+        filter: `job_id=eq.${jobId}`
       }, (payload) => {
-        if (payload.new.sender_id === otherUserId) {
-          setMessages(prev => [...prev, payload.new]);
-          // Marcar como leido
-          supabase.from('messages').update({ read_at: new Date().toISOString() }).eq('id', payload.new.id).then();
+        const msg = payload.new;
+        const isForThisChat =
+          (msg.sender_id === userId && msg.receiver_id === otherUserId) ||
+          (msg.sender_id === otherUserId && msg.receiver_id === userId);
+        if (!isForThisChat) return;
+
+        setMessages(prev => [...prev, msg]);
+        // Marcar como leido si somos el receptor
+        if (msg.receiver_id === userId) {
+          supabase.from('messages').update({ read_at: new Date().toISOString() }).eq('id', msg.id).then();
         }
       })
       .subscribe();
@@ -552,6 +831,10 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 
   const sendMessage = async (e) => {
     e.preventDefault();
+    if (!jobId) {
+      alert('Abre el chat desde la oferta concreta para vincular el mensaje.');
+      return;
+    }
     if (!newMessage.trim()) return;
 
     setSending(true);
@@ -562,7 +845,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
       const message = {
         sender_id: userId,
         receiver_id: otherUserId,
-        job_id: jobId || null,
+        job_id: jobId,
         content: messageContent,
         message_type: 'text'
       };
@@ -589,6 +872,29 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
     }
   };
 
+  const deleteConversation = async () => {
+    if (!confirm('Eliminar este chat? Se borrarán los mensajes de esta oferta.')) return;
+    if (!jobId) return;
+    setDeleting(true);
+    try {
+      await supabase.from('messages')
+        .delete()
+        .eq('job_id', jobId)
+        .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`);
+      await supabase.from('conversations')
+        .delete()
+        .eq('job_id', jobId)
+        .or(`and(local_id.eq.${userId},staff_id.eq.${otherUserId}),and(local_id.eq.${otherUserId},staff_id.eq.${userId})`);
+      setMessages([]);
+      onClose();
+    } catch (err) {
+      console.error('Error deleting chat', err);
+      alert('No se pudo eliminar el chat');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-brand-navy z-50 flex flex-col">
       <header className="bg-brand-navy-light border-b border-slate-700 p-4 flex items-center gap-3">
@@ -602,10 +908,23 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
           <h2 className="font-bold text-white">{otherUserName}</h2>
           <p className="text-slate-400 text-sm">Chat</p>
         </div>
+        <button
+          onClick={deleteConversation}
+          disabled={deleting}
+          className="p-2 text-slate-400 hover:text-red-400 disabled:opacity-50"
+        >
+          <Trash2 size={20} />
+        </button>
       </header>
 
       <div className="flex-1 overflow-auto p-4 space-y-3">
-        {loading ? (
+        {!jobId ? (
+          <div className="text-center py-12">
+            <AlertTriangle size={48} className="mx-auto text-amber-400 mb-4" />
+            <p className="text-white font-semibold">Este chat necesita una oferta</p>
+            <p className="text-slate-400 text-sm mt-1">Abre el chat desde la oferta concreta para vincular mensajes y conversaciones.</p>
+          </div>
+        ) : loading ? (
           <LoadingSpinner />
         ) : messages.length === 0 ? (
           <div className="text-center py-12">
@@ -654,6 +973,53 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
           </button>
         </div>
       </form>
+    </div>
+  );
+};
+
+// ============================================
+// PERFIL DE LOCAL (Modal)
+// ============================================
+const LocalProfileModal = ({ local, onClose }) => {
+  if (!local) return null;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-14 h-14 bg-slate-700 rounded-full overflow-hidden flex items-center justify-center">
+          {local.avatar_url ? <img src={local.avatar_url} alt="" className="w-full h-full object-cover" /> : <Building2 size={28} className="text-slate-400" />}
+        </div>
+        <div className="flex-1">
+          <h2 className="text-white font-bold text-lg">{local.business_name}</h2>
+          <p className="text-slate-400 text-sm">{local.business_type || 'Negocio'}</p>
+          <div className="mt-1">
+            <StarRating rating={local.rating} reviews={local.total_reviews} />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-800 rounded-xl p-4 space-y-2">
+        <p className="text-white font-semibold">Ubicación</p>
+        <p className="text-slate-300 text-sm">{local.address || 'Sin dirección'}</p>
+        <p className="text-slate-400 text-sm">{local.city || ''}</p>
+      </div>
+
+      <div className="bg-slate-800 rounded-xl p-4 space-y-2">
+        <p className="text-white font-semibold">Descripción</p>
+        <p className="text-slate-300 text-sm">{local.service_description || local.bio || 'Sin descripción'}</p>
+      </div>
+
+      {(local.menu_url) && (
+        <div className="bg-slate-800 rounded-xl p-4 space-y-2">
+          <p className="text-white font-semibold">Menú / Carta</p>
+          <a href={local.menu_url} target="_blank" rel="noreferrer" className="text-brand-orange text-sm underline break-all">
+            {local.menu_url}
+          </a>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button onClick={onClose} className="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">Cerrar</button>
+      </div>
     </div>
   );
 };
@@ -990,151 +1356,6 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
         >
           {loading && <Loader2 size={18} className="animate-spin" />}
           Guardar
-        </button>
-      </div>
-    </form>
-  );
-};
-
-// ============================================
-// MODAL DE RESEÑA / PUNTUACIÓN
-// ============================================
-const ReviewModal = ({ job, candidateName, onSubmit, onClose }) => {
-  const [loading, setLoading] = useState(false);
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
-  const [metrics, setMetrics] = useState({
-    punctuality: 5,
-    professionalism: 5,
-    skills: 5,
-    communication: 5
-  });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await onSubmit({ rating, comment, ...metrics });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="bg-slate-800 rounded-xl p-4">
-        <p className="text-white font-medium mb-1">Puntuando a</p>
-        <p className="text-brand-orange text-lg font-bold">{candidateName}</p>
-        <p className="text-slate-400 text-sm">{job.role_required}</p>
-      </div>
-
-      <div className="bg-brand-navy-light rounded-xl p-4 space-y-4">
-        <div>
-          <label className="text-slate-400 text-sm mb-3 block">Calificación General (1-5 estrellas)</label>
-          <div className="flex justify-between">
-            {[1, 2, 3, 4, 5].map(star => (
-              <button
-                key={star}
-                type="button"
-                onClick={() => setRating(star)}
-                className={`text-2xl transition-transform ${star <= rating ? 'text-yellow-400' : 'text-slate-600'}`}
-              >
-                ★
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-slate-400 text-sm mb-2 block">Puntualidad</label>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={metrics.punctuality}
-            onChange={(e) => setMetrics({ ...metrics, punctuality: parseInt(e.target.value) })}
-            className="w-full accent-brand-orange"
-          />
-          <div className="flex justify-between text-xs text-slate-400 mt-1">
-            <span>1</span>
-            <span className="font-bold">{metrics.punctuality}</span>
-            <span>5</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-slate-400 text-sm mb-2 block">Profesionalidad</label>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={metrics.professionalism}
-            onChange={(e) => setMetrics({ ...metrics, professionalism: parseInt(e.target.value) })}
-            className="w-full accent-brand-orange"
-          />
-          <div className="flex justify-between text-xs text-slate-400 mt-1">
-            <span>1</span>
-            <span className="font-bold">{metrics.professionalism}</span>
-            <span>5</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-slate-400 text-sm mb-2 block">Habilidades Técnicas</label>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={metrics.skills}
-            onChange={(e) => setMetrics({ ...metrics, skills: parseInt(e.target.value) })}
-            className="w-full accent-brand-orange"
-          />
-          <div className="flex justify-between text-xs text-slate-400 mt-1">
-            <span>1</span>
-            <span className="font-bold">{metrics.skills}</span>
-            <span>5</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-slate-400 text-sm mb-2 block">Comunicación</label>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={metrics.communication}
-            onChange={(e) => setMetrics({ ...metrics, communication: parseInt(e.target.value) })}
-            className="w-full accent-brand-orange"
-          />
-          <div className="flex justify-between text-xs text-slate-400 mt-1">
-            <span>1</span>
-            <span className="font-bold">{metrics.communication}</span>
-            <span>5</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-brand-navy-light rounded-xl p-4">
-        <label className="text-slate-400 text-sm mb-2 block">Comentarios (opcional)</label>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          className="w-full bg-slate-700 text-white px-4 py-3 rounded-xl outline-none resize-none h-20"
-          placeholder="¿Lo volverías a contratar? ¿Algo que mejorar?"
-        />
-      </div>
-
-      <div className="flex gap-3">
-        <button type="button" onClick={onClose} className="flex-1 bg-slate-700 text-white py-3 rounded-xl font-medium">
-          Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={loading}
-          className="flex-1 bg-brand-orange text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          {loading && <Loader2 size={18} className="animate-spin" />}
-          Enviar Reseña
         </button>
       </div>
     </form>
@@ -1582,11 +1803,22 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   const [chatWith, setChatWith] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showReviewModalStaff, setShowReviewModalStaff] = useState(false);
+  const [reviewTargetStaff, setReviewTargetStaff] = useState(null);
+  const [showReviewModalLocal, setShowReviewModalLocal] = useState(false);
+  const [reviewTargetLocal, setReviewTargetLocal] = useState(null);
   const [formData, setFormData] = useState({
     role: 'camarero', date: new Date().toISOString().split('T')[0],
     startTime: '20:00', endTime: '02:00', hourlyRate: 12,
     autoAlta: true, jobType: 'extra', evaluationCriteria: [],
     possibleHire: true, skillsRequired: [],
+    trialShiftPeriod: 'tarde',
+    trialSchedule: '',
+    trialSalaryMonth: 1200,
+    trialContractHours: 40,
+    trialDaysOff: '2 dias libres',
+    trialDaysOffType: 'fijos',
+    trialDaysOffFixed: [],
   });
 
   useEffect(() => {
@@ -1642,7 +1874,11 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   };
 
   const loadStaffProfile = async (staffId) => {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', staffId).single();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, staff_role, skills, bio, city, address, hourly_rate_min, hourly_rate_max, rating, total_reviews')
+      .eq('id', staffId)
+      .single();
     if (error) {
       console.error('Error loading staff profile:', error);
       return;
@@ -1694,7 +1930,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     // Luego, obtener todas las aplicaciones aceptadas para esos jobs
     const { data } = await supabase
       .from('applications')
-      .select(`*, staff:profiles!applications_staff_id_fkey(*), job:jobs(id, role_required)`)
+      .select(`*, staff:profiles!applications_staff_id_fkey(*), job:jobs(id, role_required, job_type, shift_date, start_time, end_time)`)
       .in('job_id', jobIds.map(j => j.id))
       .eq('status', 'accepted')
       .order('created_at', { ascending: false });
@@ -1771,6 +2007,13 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
         urgency_level: formData.jobType === 'extra' ? 'high' : 'normal',
         evaluation_criteria: formData.jobType === 'prueba' ? formData.evaluationCriteria : [],
         possible_hire: formData.jobType === 'prueba' ? formData.possibleHire : false,
+        trial_shift_period: formData.jobType === 'prueba' ? formData.trialShiftPeriod : null,
+        trial_schedule: formData.jobType === 'prueba' ? formData.trialSchedule : null,
+        trial_salary_month: formData.jobType === 'prueba' ? formData.trialSalaryMonth : null,
+        trial_contract_hours: formData.jobType === 'prueba' ? formData.trialContractHours : null,
+        trial_days_off: formData.jobType === 'prueba' ? formData.trialDaysOff : null,
+        trial_days_off_type: formData.jobType === 'prueba' ? formData.trialDaysOffType : null,
+        trial_days_off_fixed: formData.jobType === 'prueba' && formData.trialDaysOffType === 'fijos' ? formData.trialDaysOffFixed : null,
         latitude: profile?.latitude,
         longitude: profile?.longitude,
         address: profile?.address,
@@ -1791,6 +2034,8 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   const deleteJob = async (jobId) => {
     if (!confirm('Seguro que quieres eliminar esta oferta?')) return;
     await supabase.from('jobs').update({ deleted_at: new Date().toISOString(), status: 'cancelled' }).eq('id', jobId);
+    // Limpiar chats y aplicaciones asociadas para evitar que sigan visibles
+    await supabase.from('applications').update({ status: 'withdrawn' }).eq('job_id', jobId);
     loadJobs();
   };
 
@@ -1798,11 +2043,31 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     const app = applications.find(a => a.id === applicationId);
     if (!app) return;
 
-    await supabase.from('applications').update({ status: 'accepted', responded_at: new Date().toISOString() }).eq('id', applicationId);
-    await supabase.from('applications').update({ status: 'rejected' }).eq('job_id', selectedJob.id).neq('id', applicationId);
-    await supabase.from('jobs').update({ status: 'matched', matched_staff_id: app.staff_id, matched_at: new Date().toISOString() }).eq('id', selectedJob.id);
+    let accepted = false;
+    try {
+      // Si la RPC falla por falta de extensiones o schema, no bloqueamos
+      const { error: accError } = await supabase.rpc('accept_application_safe', { p_app_id: applicationId });
+      if (!accError) accepted = true;
+    } catch (err) {
+      console.warn('RPC accept_application_safe fallo, usando fallback:', err?.message);
+    }
 
-    // Notificar al staff
+    // Fallback manual siempre, para garantizar que cambia el estado
+    if (!accepted) {
+      try {
+        await supabase.from('applications').update({ status: 'accepted' }).eq('id', applicationId);
+        await supabase.from('applications').update({ status: 'rejected' }).eq('job_id', app.job_id).neq('id', applicationId).eq('status', 'pending');
+        accepted = true;
+      } catch (inner) {
+        console.error('Error manual accept fallback', inner);
+        alert(inner.message || 'No se pudo aceptar la candidatura');
+        return;
+      }
+    }
+
+    if (!accepted) return;
+
+    // Notificación insertada también por trigger; mantenemos redundancia por UX
     await supabase.from('notifications').insert({
       user_id: app.staff_id,
       type: 'application_accepted',
@@ -1818,8 +2083,30 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   };
 
   const handleRejectApplication = async (applicationId) => {
-    await supabase.from('applications').update({ status: 'rejected', responded_at: new Date().toISOString() }).eq('id', applicationId);
+    const { error } = await supabase.rpc('reject_application_safe', { p_app_id: applicationId });
+    if (error) {
+      alert(error.message || 'No se pudo rechazar');
+      return;
+    }
     loadApplications(selectedJob.id);
+  };
+
+  const handleCancelAccepted = async (application) => {
+    try {
+      await supabase.from('applications').update({ status: 'rejected' }).eq('id', application.id);
+      await supabase.from('notifications').insert({
+        user_id: application.staff_id,
+        type: 'application_rejected',
+        title: 'Candidatura cancelada',
+        body: `${profile?.business_name || 'El local'} ha cancelado tu aceptación`,
+        data: { job_id: application.job_id }
+      });
+      loadApplications(selectedJob?.id);
+      loadAcceptedApplications();
+    } catch (err) {
+      console.error('Error cancelando aceptado', err);
+      alert(err.message || 'No se pudo cancelar la aceptación');
+    }
   };
 
   const toggleFavorite = async (staffId) => {
@@ -1842,7 +2129,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   };
 
   if (chatWith) {
-    return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={selectedJob?.id} onClose={() => setChatWith(null)} />;
+    return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId || selectedJob?.id} onClose={() => setChatWith(null)} />;
   }
 
   return (
@@ -1896,8 +2183,22 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => { setChatWith({ id: c.otherId, name: c.otherName }); }} className="px-3 py-1 bg-brand-orange text-white rounded">Chat</button>
+                      <button onClick={() => { setChatWith({ id: c.otherId, name: c.otherName, jobId: selectedJob?.id }); }} className="px-3 py-1 bg-brand-orange text-white rounded">Chat</button>
                       <button onClick={() => loadStaffProfile(c.otherId)} className="px-3 py-1 bg-slate-700 text-slate-200 rounded">Perfil</button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Eliminar este chat?')) return;
+                          await supabase.from('messages').delete().eq('job_id', selectedJob?.id).or(`and(sender_id.eq.${user.id},receiver_id.eq.${c.otherId}),and(sender_id.eq.${c.otherId},receiver_id.eq.${user.id})`);
+                          await supabase.from('conversations').delete().eq('job_id', selectedJob?.id).or(`and(local_id.eq.${user.id},staff_id.eq.${c.otherId}),and(local_id.eq.${c.otherId},staff_id.eq.${user.id})`);
+                          await supabase.from('applications').update({ status: 'withdrawn' }).eq('job_id', selectedJob?.id).eq('staff_id', c.otherId);
+                          loadJobChats(selectedJob?.id);
+                          setAcceptedApplications(prev => prev.filter(a => !(a.job_id === selectedJob?.id && a.staff_id === c.otherId)));
+                          loadAcceptedApplications();
+                        }}
+                        className="px-3 py-1 bg-red-700 text-white rounded"
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1913,17 +2214,40 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
             </div>
           ) : (
             <div className="space-y-4">
-              {applications.filter(a => a.status === 'pending').map(app => (
-                <CandidateCard
-                  key={app.id}
-                  application={app}
-                  onAccept={handleAcceptApplication}
-                  onReject={handleRejectApplication}
-                  onChat={(staffId) => setChatWith({ id: staffId, name: app.staff?.full_name })}
-                  onToggleFavorite={toggleFavorite}
-                  isFavorite={favorites.includes(app.staff?.id)}
-                />
-              ))}
+              {applications.filter(a => a.status === 'pending').length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-white font-semibold">Pendientes</h4>
+                  {applications.filter(a => a.status === 'pending').map(app => (
+                    <CandidateCard
+                      key={app.id}
+                      application={app}
+                      onAccept={(a) => handleAcceptApplication(a.id)}
+                      onReject={(a) => handleRejectApplication(a.id)}
+                      onChat={(staffId) => setChatWith({ id: staffId, name: app.staff?.full_name, jobId: selectedJob?.id })}
+                      onViewProfile={loadStaffProfile}
+                      onToggleFavorite={toggleFavorite}
+                      isFavorite={favorites.includes(app.staff?.id)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {applications.filter(a => a.status === 'accepted').length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-emerald-300 font-semibold">Aceptados</h4>
+                  {applications.filter(a => a.status === 'accepted').map(app => (
+                    <CandidateCard
+                      key={app.id}
+                      application={app}
+                      onChat={(staffId) => setChatWith({ id: staffId, name: app.staff?.full_name, jobId: selectedJob?.id })}
+                      onViewProfile={loadStaffProfile}
+                      onReject={(a) => handleCancelAccepted(a)}
+                      onToggleFavorite={toggleFavorite}
+                      isFavorite={favorites.includes(app.staff?.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1964,16 +2288,28 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
                       <div className="w-10 h-10 bg-brand-orange rounded-full flex items-center justify-center text-white font-bold">{app.staff?.full_name?.charAt(0)}</div>
                       <div className="flex-1">
                         <p className="text-white font-medium">{app.staff?.full_name}</p>
-                        <p className="text-slate-400 text-xs">{ROLES[app.job?.role_required]?.label || 'Posición'}</p>
+                        <p className="text-slate-400 text-xs">
+                          {ROLES[app.job?.role_required]?.label || 'Posicion'}
+                          {app.job?.job_type && ` · ${app.job.job_type === 'prueba' ? 'Prueba' : 'Extra'}`}
+                          {app.job?.shift_date && ` · ${formatDate(app.job.shift_date)}${app.job?.start_time ? ' ' + app.job.start_time.slice(0,5) : ''}`}
+                        </p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => setChatWith({ id: app.staff?.id, name: app.staff?.full_name })}
-                      className="px-4 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition text-sm font-medium flex items-center gap-2"
-                    >
-                      <MessageCircle size={16} />
-                      Chat
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setChatWith({ id: app.staff?.id, name: app.staff?.full_name, jobId: app.job_id || app.job?.id })}
+                        className="px-4 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition text-sm font-medium flex items-center gap-2"
+                      >
+                        <MessageCircle size={16} />
+                        Chat
+                      </button>
+                      <button
+                        onClick={() => { setReviewTargetLocal({ jobId: app.job_id || app.job?.id, reviewedId: app.staff_id, name: app.staff?.full_name, reviewerType: 'local' }); setShowReviewModalLocal(true); }}
+                        className="px-3 py-2 bg-slate-700 text-slate-200 rounded-lg text-sm"
+                      >
+                        Valorar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -2011,14 +2347,12 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
                         }`}>
                           {job.status === 'open' ? 'Abierta' : job.status === 'matched' ? 'Asignada' : job.status}
                         </span>
-                        {job.status === 'open' && (
-                          <button
-                            onClick={() => { setSelectedJob(job); loadApplications(job.id); loadJobChats(job.id); }}
-                            className="text-brand-orange text-sm font-medium flex items-center gap-1"
-                          >
-                            Ver candidatos <ChevronRight size={16} />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => { setSelectedJob(job); loadApplications(job.id); loadJobChats(job.id); }}
+                          className="text-brand-orange text-sm font-medium flex items-center gap-1"
+                        >
+                          Ver detalle <ChevronRight size={16} />
+                        </button>
                       </div>
                     </div>
                   );
@@ -2075,6 +2409,114 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
               <div className="bg-slate-700 px-4 py-2 rounded-xl text-center min-w-[80px]"><span className="text-2xl font-bold text-white">{formData.hourlyRate}EUR</span></div>
             </div>
           </div>
+
+          {formData.jobType === 'prueba' && (
+            <div className="bg-brand-navy-light rounded-2xl p-5 space-y-4">
+              <h3 className="text-white font-bold mb-2">Condiciones de prueba</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Turno</p>
+                  <div className="flex gap-2">
+                    {['manana', 'tarde'].map(opt => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, trialShiftPeriod: opt })}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium ${formData.trialShiftPeriod === opt ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-200'}`}
+                      >
+                        {opt === 'manana' ? 'Mañana' : 'Tarde'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Horario</p>
+                  <input
+                    type="text"
+                    value={formData.trialSchedule}
+                    onChange={(e) => setFormData({ ...formData, trialSchedule: e.target.value })}
+                    placeholder="Ej: 09:00-17:00"
+                    className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Sueldo / mes (EUR)</p>
+                  <input
+                    type="number"
+                    value={formData.trialSalaryMonth}
+                    onChange={(e) => setFormData({ ...formData, trialSalaryMonth: parseInt(e.target.value || 0) })}
+                    className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg outline-none"
+                  />
+                </div>
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Horas contrato</p>
+                  <input
+                    type="number"
+                    value={formData.trialContractHours}
+                    onChange={(e) => setFormData({ ...formData, trialContractHours: parseInt(e.target.value || 0) })}
+                    className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Días libres</p>
+                  <input
+                    type="text"
+                    value={formData.trialDaysOff}
+                    onChange={(e) => setFormData({ ...formData, trialDaysOff: e.target.value })}
+                    placeholder="Ej: 2 dias/semana"
+                    className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg outline-none"
+                  />
+                </div>
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Tipo</p>
+                  <div className="flex gap-2">
+                    {['fijos', 'rotativos'].map(opt => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, trialDaysOffType: opt })}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium ${formData.trialDaysOffType === opt ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-200'}`}
+                      >
+                        {opt === 'fijos' ? 'Fijos' : 'Rotativos'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {formData.trialDaysOffType === 'fijos' && (
+                <div>
+                  <p className="text-slate-400 text-xs mb-1">Selecciona los días libres</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {['lunes','martes','miercoles','jueves','viernes','sabado','domingo'].map(day => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => {
+                          const exists = formData.trialDaysOffFixed.includes(day);
+                          setFormData({
+                            ...formData,
+                            trialDaysOffFixed: exists
+                              ? formData.trialDaysOffFixed.filter(d => d !== day)
+                              : [...formData.trialDaysOffFixed, day]
+                          });
+                        }}
+                        className={`px-3 py-2 rounded-lg text-sm capitalize ${formData.trialDaysOffFixed.includes(day) ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-200'}`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {formData.jobType === 'prueba' && (
             <div className="bg-brand-navy-light rounded-2xl p-5">
@@ -2143,6 +2585,58 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
           </div>
         </div>
       )}
+
+      {/* Modal Perfil Staff */}
+      <Modal isOpen={showStaffProfile} onClose={() => setShowStaffProfile(false)} title="Perfil del trabajador" size="lg">
+        <StaffProfileModal profile={staffProfileView} onClose={() => setShowStaffProfile(false)} />
+      </Modal>
+
+      {/* Modal de Review */}
+      <Modal
+        isOpen={showReviewModalLocal}
+        onClose={() => { setShowReviewModalLocal(false); setReviewTargetLocal(null); }}
+        title="Valorar"
+        size="lg"
+      >
+        <ReviewModal
+          isOpen={showReviewModalLocal}
+          targetName={reviewTargetLocal?.name || ''}
+          onClose={() => { setShowReviewModalLocal(false); setReviewTargetLocal(null); }}
+          onSubmit={async ({ attendancePresent, rating, punctuality, professionalism, skills, communication, wouldHireAgain, fairTreatment, comment }) => {
+            if (!reviewTargetLocal?.jobId || !reviewTargetLocal?.reviewedId) return;
+            try {
+              const { error } = await supabase.from('reviews').insert({
+                job_id: reviewTargetLocal.jobId,
+                reviewer_id: user.id,
+                reviewed_id: reviewTargetLocal.reviewedId,
+                attendance_present: attendancePresent,
+                rating,
+                punctuality,
+                professionalism,
+                skills,
+                communication,
+                would_hire_again: wouldHireAgain,
+                fair_treatment: fairTreatment,
+                comment
+              });
+              if (error) {
+                if (error.code === '23505') {
+                  alert('Ya has valorado esta oferta. Solo se permite una review por job y usuario.');
+                  return;
+                }
+                throw error;
+              }
+              alert('Valoración enviada');
+            } catch (err) {
+              console.error('Error creando review', err);
+              alert(err.message || 'No se pudo guardar la valoración (verifica permisos/RLS)');
+            } finally {
+              setShowReviewModalLocal(false);
+              setReviewTargetLocal(null);
+            }
+          }}
+        />
+      </Modal>
     </div>
   );
 };
@@ -2164,6 +2658,15 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
   const [activeTab, setActiveTab] = useState('buscar');
   const [chatWith, setChatWith] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [viewJob, setViewJob] = useState(null);
+  const [localProfileView, setLocalProfileView] = useState(null);
+  const [showLocalProfile, setShowLocalProfile] = useState(false);
+  const [showReviewModalStaff, setShowReviewModalStaff] = useState(false);
+  const [reviewTargetStaff, setReviewTargetStaff] = useState(null);
+  const [showReviewModalLocal, setShowReviewModalLocal] = useState(false);
+  const [reviewTargetLocal, setReviewTargetLocal] = useState(null);
 
   useEffect(() => {
     loadJobs();
@@ -2182,7 +2685,7 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
     setLoading(true);
     const { data } = await supabase
       .from('jobs')
-      .select(`*, local:profiles!jobs_local_id_fkey(business_name, city, address, avatar_url)`)
+      .select(`*, local:profiles!jobs_local_id_fkey(business_name, city, address, avatar_url, business_type, bio, rating, total_reviews, menu_url, service_description)`)
       .eq('status', 'open')
       .is('deleted_at', null)
       .gte('shift_date', new Date().toISOString().split('T')[0])
@@ -2212,15 +2715,64 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
     if (data) setMyApplications(data);
   };
 
+  const openLocalProfile = async (localId, localData = null) => {
+    if (!localId) return;
+    // Mostrar inmediatamente con los datos que ya tenemos en el job, por si RLS bloquea la consulta
+    if (localData) {
+      setLocalProfileView(localData);
+      setShowLocalProfile(true);
+    }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, business_name, business_type, address, city, bio, avatar_url, rating, total_reviews, menu_url, service_description')
+        .eq('id', localId)
+        .single();
+      if (error) throw error;
+      setLocalProfileView(data);
+      setShowLocalProfile(true);
+    } catch (err) {
+      console.error('Error loading local profile:', err);
+      if (!localData) alert('No se pudo cargar el perfil del local');
+    }
+  };
+
   const loadNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
-      .is('read_at', null)
       .order('created_at', { ascending: false })
-      .limit(10);
-    if (data) setNotifications(data);
+      .limit(20);
+    if (data) {
+      setNotifications(data);
+      setUnreadNotifications(data.filter(n => !n.read_at).length);
+    }
+  };
+
+  const handleToggleNotifications = async (forceClose = false) => {
+    if (forceClose || showNotifications) {
+      setShowNotifications(false);
+      return;
+    }
+
+    setShowNotifications(true);
+    try {
+      await supabase
+        .from('notifications')
+        .update({ read_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+        .is('read_at', null);
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
+
+    try {
+      await loadNotifications();
+      setUnreadNotifications(0);
+    } catch (err) {
+      console.error('Error loading notifications:', err);
+    }
   };
 
   const loadCarnetStats = async () => {
@@ -2286,6 +2838,110 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
     return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId} onClose={() => setChatWith(null)} />;
   }
 
+  if (viewJob) {
+    const applied = myApplications.some(app => app.job_id === viewJob.id && !['cancelled'].includes(app.status));
+    const appliedStatus = myApplications.find(app => app.job_id === viewJob.id && !['cancelled'].includes(app.status))?.status;
+    return (
+      <div className="min-h-screen bg-brand-navy pb-24">
+        <header className="bg-brand-navy-light border-b border-slate-700 p-4 flex items-center gap-3">
+          <button onClick={() => setViewJob(null)} className="p-2 text-slate-400">
+            <ChevronLeft size={24} />
+          </button>
+          <div>
+            <p className="text-slate-400 text-xs">Oferta</p>
+            <h2 className="text-white font-bold">{viewJob.local?.business_name || 'Local'}</h2>
+          </div>
+        </header>
+
+        <div className="p-4 space-y-4">
+          <div className="bg-brand-navy-light rounded-2xl p-4 space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <JobTypeBadge type={viewJob.job_type} />
+                  <RoleBadge role={viewJob.role_required} size="sm" />
+                </div>
+                <p className="text-slate-300 text-sm flex items-center gap-2">
+                  <MapPin size={14} className="text-brand-orange" />
+                  {(viewJob.address || viewJob.local?.address || 'Ubicación no especificada')} · {(viewJob.local?.city || '')}
+                </p>
+              </div>
+              <button onClick={() => openLocalProfile(viewJob.local_id, viewJob.local)} className="text-brand-orange text-sm underline">Ver local</button>
+            </div>
+
+            <div className="flex items-center gap-4 text-slate-300 text-sm">
+              <span className="flex items-center gap-1"><CalendarDays size={14} className="text-brand-orange" />{formatDate(viewJob.shift_date)}</span>
+              <span className="flex items-center gap-1"><Clock size={14} className="text-brand-orange" />{viewJob.start_time?.slice(0,5)} - {viewJob.end_time?.slice(0,5)}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-bold text-white">{viewJob.hourly_rate}EUR</span>
+              <span className="text-slate-400">/h</span>
+            </div>
+
+            {viewJob.job_type === 'prueba' && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                <p className="text-amber-300 text-sm font-semibold">Condiciones si te contratan:</p>
+                <div className="grid grid-cols-2 gap-2 text-slate-200 text-sm">
+                  <span>Turno: {viewJob.trial_shift_period === 'manana' ? 'Mañana' : viewJob.trial_shift_period === 'tarde' ? 'Tarde' : 'No especificado'}</span>
+                  <span>Horario: {viewJob.trial_schedule || 'No especificado'}</span>
+                  <span>Sueldo mes: {viewJob.trial_salary_month ? `${viewJob.trial_salary_month} EUR` : 'No especificado'}</span>
+                  <span>Horas contrato: {viewJob.trial_contract_hours || 'No especificado'}</span>
+                  <span>Dias libres: {viewJob.trial_days_off || 'No especificado'}</span>
+                  <span>Tipo dias libres: {viewJob.trial_days_off_type || 'No especificado'}</span>
+                  {viewJob.trial_days_off_type === 'fijos' && (
+                    <span className="col-span-2">Dias libres fijos: {viewJob.trial_days_off_fixed?.length ? viewJob.trial_days_off_fixed.join(', ') : 'No especificado'}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {viewJob.skills_required?.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {viewJob.skills_required.map(skill => (
+                  <span key={skill} className="bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded-full border border-slate-700">{skill}</span>
+                ))}
+              </div>
+            )}
+
+            {viewJob.notes && (
+              <div className="bg-slate-800 rounded-xl p-3">
+                <p className="text-white font-semibold text-sm mb-1">Notas</p>
+                <p className="text-slate-300 text-sm">{viewJob.notes}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <button
+              onClick={() => setChatWith({ id: viewJob.local_id, name: viewJob.local?.business_name, jobId: viewJob.id })}
+              className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+            >
+              <MessageCircle size={18} />
+              Chat con el local
+            </button>
+            {applied ? (
+              <div className="w-full bg-slate-800 text-slate-200 py-3 rounded-xl text-center text-sm">
+                {appliedStatus === 'accepted' ? 'Candidatura aceptada' : `Ya aplicaste (${appliedStatus || 'pendiente'})`}
+              </div>
+            ) : (
+              <button
+                onClick={() => { handleApply(viewJob); setViewJob(null); }}
+                className="w-full bg-brand-orange text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+              >
+                <Send size={18} />
+                Aplicar a esta oferta
+              </button>
+            )}
+          </div>
+        </div>
+        <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
+          <LocalProfileModal local={localProfileView} onClose={() => setShowLocalProfile(false)} />
+        </Modal>
+      </div>
+    );
+  }
+
   if (loading) return <LoadingSpinner />;
 
   return (
@@ -2312,9 +2968,9 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
             >
               <QrCode size={20} className="text-white" />
             </button>
-            <button className="p-2 bg-slate-700 rounded-full relative">
+            <button onClick={() => handleToggleNotifications()} className="p-2 bg-slate-700 rounded-full relative">
               <Bell size={20} className="text-slate-400" />
-              {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{notifications.length}</span>}
+              {unreadNotifications > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{unreadNotifications}</span>}
             </button>
             <button onClick={onLogout} className="p-2 text-slate-400"><LogOut size={20} /></button>
           </div>
@@ -2415,7 +3071,22 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
                   </div>
                 </div>
 
-                <div className="p-4 pt-0">
+                <div className="p-4 pt-0 space-y-3">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setViewJob(job)}
+                      className="flex-1 bg-slate-800 text-slate-100 py-2 rounded-xl text-sm font-medium"
+                    >
+                      Ver oferta
+                    </button>
+                    <button
+                      onClick={() => openLocalProfile(job.local_id, job.local)}
+                      className="flex-1 bg-slate-700 text-slate-200 py-2 rounded-xl text-sm font-medium"
+                    >
+                      Ver local
+                    </button>
+                  </div>
+
                   {job.job_type === 'prueba' ? (
                     <button
                       onClick={() => handleApply(job)}
@@ -2442,7 +3113,9 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
               <p className="text-sm">Explora las ofertas disponibles</p>
             </div>
           ) : (
-            myApplications.map((app) => (
+            myApplications
+              .filter(app => app.job?.deleted_at === null && app.job?.status !== 'cancelled')
+              .map((app) => (
               <div key={app.id} className={`bg-brand-navy-light rounded-xl p-4 ${app.status === 'accepted' ? 'ring-2 ring-emerald-500' : ''}`}>
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -2475,13 +3148,21 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
                 )}
 
                 {app.status === 'accepted' && (
-                  <button
-                    onClick={() => setChatWith({ id: app.job?.local_id, name: app.job?.local?.business_name, jobId: app.job?.id })}
-                    className="w-full bg-brand-orange text-white py-2 rounded-xl font-medium flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle size={16} />
-                    Chat con el local
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => setChatWith({ id: app.job?.local_id, name: app.job?.local?.business_name, jobId: app.job?.id })}
+                      className="w-full bg-brand-orange text-white py-2 rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <MessageCircle size={16} />
+                      Chat con el local
+                    </button>
+                    <button
+                      onClick={() => { setReviewTargetLocal({ jobId: app.job?.id, reviewedId: app.job?.local_id, name: app.job?.local?.business_name, reviewerType: 'staff' }); setShowReviewModalLocal(true); }}
+                      className="w-full bg-slate-800 text-slate-100 py-2 rounded-xl font-medium"
+                    >
+                      Valorar al local
+                    </button>
+                  </div>
                 )}
               </div>
             ))
@@ -2489,7 +3170,50 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
         </div>
       )}
 
+      {/* Panel de Notificaciones */}
+      {showNotifications && (
+        <div onClick={() => handleToggleNotifications(true)} className="fixed inset-0 bg-black/50 z-40 flex items-start justify-end pt-20 pr-4">
+          <div onClick={(e) => e.stopPropagation()} className="bg-brand-navy-light rounded-2xl w-full max-w-sm max-h-[65vh] overflow-hidden shadow-2xl flex flex-col">
+            <div className="p-4 border-b border-slate-700 sticky top-0 bg-brand-navy-light flex items-center justify-between">
+              <h2 className="text-white font-bold flex items-center gap-2">
+                <Bell size={18} className="text-brand-orange" />
+                Notificaciones ({notifications.length})
+              </h2>
+              <button onClick={() => handleToggleNotifications(true)} className="text-slate-400 text-sm hover:text-white">
+                Cerrar
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-2">
+              {notifications.length === 0 ? (
+                <div className="text-center py-12">
+                  <Bell size={40} className="mx-auto text-slate-600 mb-2" />
+                  <p className="text-slate-500">Sin notificaciones</p>
+                </div>
+              ) : (
+                notifications.map((notif) => {
+                  const isUnread = !notif.read_at;
+                  return (
+                    <div key={notif.id} className={`rounded-xl p-3 border ${isUnread ? 'border-brand-orange/60 bg-slate-800' : 'border-slate-700 bg-slate-800/70'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-white font-medium text-sm">{notif.title}</p>
+                        {isUnread && <span className="text-amber-400 text-xs font-semibold">Nuevo</span>}
+                      </div>
+                      {notif.body && <p className="text-slate-300 text-sm mt-1">{notif.body}</p>}
+                      <p className="text-slate-500 text-xs mt-2">{formatDateTime(notif.created_at)}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Perfil */}
+      <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
+        <LocalProfileModal local={localProfileView} onClose={() => setShowLocalProfile(false)} />
+      </Modal>
+
       <Modal isOpen={showProfile} onClose={() => setShowProfile(false)} title="Mi Perfil" size="lg">
         <div className="text-center mb-6">
           <div className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3 overflow-hidden">
@@ -2558,6 +3282,49 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
       {/* Modal Carnet Digital */}
       <Modal isOpen={showCarnet} onClose={() => setShowCarnet(false)} title="Carnet Digital" size="lg">
         <CarnetDigital profile={profile} stats={carnetStats || profile} onClose={() => setShowCarnet(false)} />
+      </Modal>
+
+      {/* Modal de Review (staff valora local) */}
+      <Modal
+        isOpen={showReviewModalLocal}
+        onClose={() => { setShowReviewModalLocal(false); setReviewTargetLocal(null); }}
+        title="Valorar"
+        size="lg"
+      >
+        <LocalReviewModal
+          isOpen={showReviewModalLocal}
+          targetName={reviewTargetLocal?.name || ''}
+          onClose={() => { setShowReviewModalLocal(false); setReviewTargetLocal(null); }}
+          onSubmit={async ({ rating, fairTreatment, wouldReturn, comment }) => {
+            if (!reviewTargetLocal?.jobId || !reviewTargetLocal?.reviewedId) return;
+            try {
+              const { error } = await supabase.from('reviews').insert({
+                job_id: reviewTargetLocal.jobId,
+                reviewer_id: user.id,
+                reviewed_id: reviewTargetLocal.reviewedId,
+                rating,
+                fair_treatment: fairTreatment,
+                would_hire_again: wouldReturn,
+                comment,
+                local_review: true
+              });
+              if (error) {
+                if (error.code === '23505') {
+                  alert('Ya has valorado esta oferta. Solo se permite una review por job y usuario.');
+                  return;
+                }
+                throw error;
+              }
+              alert('Valoracion enviada');
+            } catch (err) {
+              console.error('Error creando review', err);
+              alert(err.message || 'No se pudo guardar la valoracion (verifica permisos/RLS)');
+            } finally {
+              setShowReviewModalLocal(false);
+              setReviewTargetLocal(null);
+            }
+          }}
+        />
       </Modal>
 
       {/* Modal Formulario de Aplicacion */}

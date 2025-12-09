@@ -1,7 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Fallbacks para desarrollo local si faltan variables .env
+const DEFAULT_SUPABASE_URL = 'https://oknpgpencszibnmndyzm.supabase.co'
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rbnBncGVuY3N6aWJubW5keXptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM5MzE2NzEsImV4cCI6MjA3OTUwNzY3MX0.4Eyxg6kNGcoOBgrfGIiGH7uj9YXkuMI4ORSQPJLHjSo'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase URL o ANON key no configurados. Revisa .env.local')
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
