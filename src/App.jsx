@@ -507,7 +507,7 @@ const CandidateCard = ({ application, onAccept, onReject, onChat, onToggleFavori
 // ============================================
 // PERFIL DE STAFF (Modal para locales)
 // ============================================
-const StaffProfileModal = ({ profile, onClose }) => {
+const StaffProfileModal = ({ profile, onClose, onChat }) => {
   if (!profile) return null;
   return (
     <div className="space-y-4">
@@ -558,7 +558,15 @@ const StaffProfileModal = ({ profile, onClose }) => {
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {onChat && (
+          <button
+            onClick={() => onChat(profile)}
+            className="px-4 py-2 bg-brand-orange text-white rounded-lg"
+          >
+            Enviar mensaje
+          </button>
+        )}
         <button onClick={onClose} className="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">Cerrar</button>
       </div>
     </div>
@@ -763,10 +771,6 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    if (!jobId) {
-      setLoading(false);
-      return;
-    }
     loadMessages();
     const subscription = subscribeToMessages();
     return () => { subscription?.unsubscribe(); };
@@ -777,15 +781,18 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   }, [messages]);
 
   const loadMessages = async () => {
-    if (!jobId) return;
     setLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from('messages')
       .select('*')
-      .eq('job_id', jobId)
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
       .order('created_at', { ascending: true })
       .limit(100);
+
+    if (jobId) query = query.eq('job_id', jobId);
+    else query = query.is('job_id', null);
+
+    const { data, error } = await query;
 
     if (data) setMessages(data);
     if (error) console.error('Error loading messages:', error);
@@ -793,33 +800,38 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 
     // Marcar como leidos
     if (data && data.length > 0) {
-      const { error: updateError } = await supabase
+      let updateQuery = supabase
         .from('messages')
         .update({ read_at: new Date().toISOString() })
         .eq('receiver_id', userId)
         .eq('sender_id', otherUserId)
-        .eq('job_id', jobId)
         .is('read_at', null);
+
+      if (jobId) updateQuery = updateQuery.eq('job_id', jobId);
+      else updateQuery = updateQuery.is('job_id', null);
+
+      const { error: updateError } = await updateQuery;
       
       if (updateError) console.error('Error marking as read:', updateError);
     }
   };
 
   const subscribeToMessages = () => {
-    if (!jobId) return null;
     return supabase
-      .channel(`chat-${userId}-${otherUserId}-${jobId}`)
+      .channel(`chat-${userId}-${otherUserId}-${jobId || 'direct'}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
-        filter: `job_id=eq.${jobId}`
+        ...(jobId ? { filter: `job_id=eq.${jobId}` } : { filter: `receiver_id=eq.${userId}` })
       }, (payload) => {
         const msg = payload.new;
         const isForThisChat =
           (msg.sender_id === userId && msg.receiver_id === otherUserId) ||
           (msg.sender_id === otherUserId && msg.receiver_id === userId);
         if (!isForThisChat) return;
+        if (!jobId && msg.job_id !== null) return;
+        if (jobId && msg.job_id !== jobId) return;
 
         setMessages(prev => [...prev, msg]);
         // Marcar como leido si somos el receptor
@@ -832,10 +844,6 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!jobId) {
-      alert('Abre el chat desde la oferta concreta para vincular el mensaje.');
-      return;
-    }
     if (!newMessage.trim()) return;
 
     setSending(true);
@@ -846,7 +854,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
       const message = {
         sender_id: userId,
         receiver_id: otherUserId,
-        job_id: jobId,
+        job_id: jobId || null,
         content: messageContent,
         message_type: 'text'
       };
@@ -874,18 +882,22 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   };
 
   const deleteConversation = async () => {
-    if (!confirm('Eliminar este chat? Se borrarán los mensajes de esta oferta.')) return;
-    if (!jobId) return;
+    if (!confirm('Eliminar este chat? Se borrarán los mensajes.')) return;
     setDeleting(true);
     try {
-      await supabase.from('messages')
+      let deleteMsgs = supabase.from('messages')
         .delete()
-        .eq('job_id', jobId)
         .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`);
-      await supabase.from('conversations')
+      if (jobId) deleteMsgs = deleteMsgs.eq('job_id', jobId);
+      else deleteMsgs = deleteMsgs.is('job_id', null);
+      await deleteMsgs;
+
+      let deleteConv = supabase.from('conversations')
         .delete()
-        .eq('job_id', jobId)
         .or(`and(local_id.eq.${userId},staff_id.eq.${otherUserId}),and(local_id.eq.${otherUserId},staff_id.eq.${userId})`);
+      if (jobId) deleteConv = deleteConv.eq('job_id', jobId);
+      else deleteConv = deleteConv.is('job_id', null);
+      await deleteConv;
       setMessages([]);
       onClose();
     } catch (err) {
@@ -919,13 +931,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
       </header>
 
       <div className="flex-1 overflow-auto p-4 space-y-3">
-        {!jobId ? (
-          <div className="text-center py-12">
-            <AlertTriangle size={48} className="mx-auto text-amber-400 mb-4" />
-            <p className="text-white font-semibold">Este chat necesita una oferta</p>
-            <p className="text-slate-400 text-sm mt-1">Abre el chat desde la oferta concreta para vincular mensajes y conversaciones.</p>
-          </div>
-        ) : loading ? (
+        {loading ? (
           <LoadingSpinner />
         ) : messages.length === 0 ? (
           <div className="text-center py-12">
@@ -981,7 +987,7 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 // ============================================
 // PERFIL DE LOCAL (Modal)
 // ============================================
-const LocalProfileModal = ({ local, onClose }) => {
+const LocalProfileModal = ({ local, onClose, onChat }) => {
   if (!local) return null;
   return (
     <div className="space-y-4">
@@ -1018,7 +1024,15 @@ const LocalProfileModal = ({ local, onClose }) => {
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {onChat && (
+          <button
+            onClick={() => onChat(local)}
+            className="px-4 py-2 bg-brand-orange text-white rounded-lg"
+          >
+            Enviar mensaje
+          </button>
+        )}
         <button onClick={onClose} className="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg">Cerrar</button>
       </div>
     </div>
@@ -1138,6 +1152,8 @@ const CarnetDigital = ({ profile, stats, onClose }) => {
 const EditProfileModal = ({ profile, onSave, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [uploadingCV, setUploadingCV] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(profile?.avatar_url || null);
   const [formData, setFormData] = useState({
     full_name: profile?.full_name || '',
     phone: profile?.phone || '',
@@ -1148,6 +1164,21 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
     cv_text: profile?.cv_text || '',
     cv_url: profile?.cv_url || '',
   });
+
+  const handleAvatarChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Solo se permiten imágenes');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('La imagen no puede ser mayor a 5MB');
+      return;
+    }
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
 
   const toggleSkill = (skill) => {
     setFormData(prev => ({
@@ -1222,13 +1253,32 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await supabase
+      let avatar_url = profile.avatar_url;
+
+      if (avatarFile) {
+        const fileName = `${profile.id}-${Date.now()}.jpg`;
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, avatarFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        avatar_url = urlData?.publicUrl || avatar_url;
+      }
+
+      const { data, error } = await supabase
         .from('profiles')
-        .update(formData)
-        .eq('id', profile.id);
+        .update({ ...formData, avatar_url })
+        .eq('id', profile.id)
+        .select()
+        .single();
 
       if (error) throw error;
-      onSave({ ...profile, ...formData });
+      onSave(data);
       onClose();
     } catch (err) {
       alert('Error: ' + err.message);
@@ -1239,6 +1289,23 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="bg-brand-navy-light rounded-xl p-4">
+        <label className="text-slate-400 text-sm mb-3 block">Foto de perfil</label>
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 bg-slate-700 rounded-full overflow-hidden flex items-center justify-center">
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <User size={28} className="text-slate-400" />
+            )}
+          </div>
+          <label className="px-4 py-2 bg-slate-700 text-white rounded-xl cursor-pointer hover:bg-slate-600 transition text-sm">
+            Cambiar foto
+            <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+          </label>
+        </div>
+      </div>
+
       <div className="bg-brand-navy-light rounded-xl p-4">
         <label className="text-slate-400 text-sm mb-2 block">Nombre completo</label>
         <input
@@ -2933,8 +3000,12 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
       <header className="bg-brand-navy-light border-b border-slate-700 p-4 pt-8">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowProfileEdit(true)} className="w-10 h-10 bg-brand-orange rounded-full flex items-center justify-center hover:bg-orange-600 transition">
-              <Building2 size={20} className="text-white" />
+            <button onClick={() => setShowProfileEdit(true)} className="w-10 h-10 bg-slate-700 rounded-full flex items-center justify-center overflow-hidden hover:bg-slate-600 transition">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <Building2 size={20} className="text-slate-200" />
+              )}
             </button>
             <div>
               <h1 className="text-lg font-bold text-white">{profile?.business_name || 'Mi Local'}</h1>
@@ -3426,7 +3497,14 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
 
       {/* Modal Perfil Staff */}
       <Modal isOpen={showStaffProfile} onClose={() => setShowStaffProfile(false)} title="Perfil del trabajador" size="lg">
-        <StaffProfileModal profile={staffProfileView} onClose={() => setShowStaffProfile(false)} />
+        <StaffProfileModal
+          profile={staffProfileView}
+          onClose={() => setShowStaffProfile(false)}
+          onChat={(p) => {
+            setShowStaffProfile(false);
+            setChatWith({ id: p.id, name: p.full_name });
+          }}
+        />
       </Modal>
 
       {/* Modal de Review */}
@@ -3785,9 +3863,16 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
             )}
           </div>
         </div>
-        <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
-          <LocalProfileModal local={localProfileView} onClose={() => setShowLocalProfile(false)} />
-        </Modal>
+      <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
+        <LocalProfileModal
+          local={localProfileView}
+          onClose={() => setShowLocalProfile(false)}
+          onChat={(l) => {
+            setShowLocalProfile(false);
+            setChatWith({ id: l.id, name: l.business_name });
+          }}
+        />
+      </Modal>
       </div>
     );
   }
@@ -4075,7 +4160,14 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
 
       {/* Modal de Perfil */}
       <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
-        <LocalProfileModal local={localProfileView} onClose={() => setShowLocalProfile(false)} />
+        <LocalProfileModal
+          local={localProfileView}
+          onClose={() => setShowLocalProfile(false)}
+          onChat={(l) => {
+            setShowLocalProfile(false);
+            setChatWith({ id: l.id, name: l.business_name });
+          }}
+        />
       </Modal>
 
       <Modal isOpen={showProfile} onClose={() => setShowProfile(false)} title="Mi Perfil" size="lg">

@@ -606,17 +606,21 @@ export const getLocalProfile = async (localId) => {
 // ============================================
 
 export const createOrGetConversation = async (localId, staffId, jobId = null) => {
-  // Check if conversation exists
-  const { data: existing } = await supabase
+  // Check if conversation exists (avoid .single() to prevent 406 when not found)
+  let existingQuery = supabase
     .from('conversations')
     .select('*')
     .eq('local_id', localId)
     .eq('staff_id', staffId)
-    .single()
+    .limit(1)
 
-  if (existing) {
-    return existing
-  }
+  if (jobId) existingQuery = existingQuery.eq('job_id', jobId)
+  else existingQuery = existingQuery.is('job_id', null)
+
+  const { data: existingRows, error: existingError } = await existingQuery
+
+  if (existingError) throw existingError
+  if (existingRows && existingRows.length > 0) return existingRows[0]
 
   // Create new conversation
   const { data, error } = await supabase
