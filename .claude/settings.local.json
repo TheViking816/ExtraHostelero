@@ -16,7 +16,12 @@
       "Bash(git push:*)",
       "Bash(npm install:*)",
       "Bash(findstr:*)",
-      "Bash(npx web-push:*)"
+      "Bash(npx web-push:*)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git pull:*)",
+      "Bash(supabase functions deploy:*)",
+      "Bash(supabase link:*)"
     ],
     "deny": [],
     "ask": []

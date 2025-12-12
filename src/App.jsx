@@ -161,23 +161,40 @@ async function subscribeToPushNotifications(userId) {
 
 async function unsubscribeFromPushNotifications(userId) {
   try {
+    console.log('[unsubscribeFromPushNotifications] Starting for userId:', userId);
+
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
 
     if (subscription) {
+      console.log('[unsubscribeFromPushNotifications] Unsubscribing from push manager...');
       await subscription.unsubscribe();
 
-      // Mark as inactive in database
-      await supabase
+      console.log('[unsubscribeFromPushNotifications] Deleting from database...');
+      // Eliminar completamente de la base de datos
+      const { error } = await supabase
         .from('push_subscriptions')
-        .update({ active: false })
+        .delete()
         .eq('user_id', userId)
         .eq('endpoint', subscription.endpoint);
+
+      if (error) {
+        console.error('[unsubscribeFromPushNotifications] Database error:', error);
+        return false;
+      }
+    } else {
+      console.log('[unsubscribeFromPushNotifications] No active subscription found');
+      // Eliminar todas las suscripciones del usuario de la DB por si acaso
+      await supabase
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', userId);
     }
 
+    console.log('[unsubscribeFromPushNotifications] SUCCESS!');
     return true;
   } catch (error) {
-    console.error('Error unsubscribing from push:', error);
+    console.error('[unsubscribeFromPushNotifications] Error:', error);
     return false;
   }
 }
@@ -4287,6 +4304,35 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
     }
   };
 
+  const handleDisablePushNotifications = async () => {
+    if (checkingPush) return;
+
+    const confirmed = confirm('¿Estás seguro de que quieres deshabilitar las notificaciones?\n\nDejarás de recibir alertas de nuevas ofertas, mensajes y candidaturas.');
+    if (!confirmed) return;
+
+    setCheckingPush(true);
+
+    console.log('Disabling push notifications...');
+
+    try {
+      const success = await unsubscribeFromPushNotifications(profile.id);
+      console.log('unsubscribeFromPushNotifications result:', success);
+
+      if (success) {
+        setPushEnabled(false);
+        await checkPushStatus(); // Recheck status
+        alert('✅ Notificaciones deshabilitadas correctamente.');
+      } else {
+        alert('Error al deshabilitar las notificaciones.');
+      }
+    } catch (err) {
+      console.error('Error disabling push:', err);
+      alert('Error al deshabilitar notificaciones: ' + err.message);
+    } finally {
+      setCheckingPush(false);
+    }
+  };
+
   const loadCarnetStats = async () => {
     const { data } = await supabase.rpc('get_carnet_stats', { p_staff_id: user.id });
     if (data) setCarnetStats(data);
@@ -4860,10 +4906,29 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
                   </button>
                 )}
                 {pushEnabled && (
-                  <div className="flex items-center gap-2 text-xs text-emerald-400">
-                    <CheckCircle size={14} />
-                    <span>Recibirás notificaciones en tiempo real</span>
-                  </div>
+                  <>
+                    <div className="flex items-center gap-2 text-xs text-emerald-400 mb-3">
+                      <CheckCircle size={14} />
+                      <span>Recibirás notificaciones en tiempo real</span>
+                    </div>
+                    <button
+                      onClick={handleDisablePushNotifications}
+                      disabled={checkingPush}
+                      className="w-full bg-slate-700 text-slate-300 py-2 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:bg-slate-600 transition disabled:opacity-50"
+                    >
+                      {checkingPush ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <X size={16} />
+                          Deshabilitar Notificaciones
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
