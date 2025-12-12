@@ -1485,7 +1485,7 @@ const AuthScreen = ({ onAuth }) => {
 // ============================================
 // ONBOARDING - SELECCION DE TIPO
 // ============================================
-const OnboardingTypeSelect = ({ onSelect }) => (
+const OnboardingTypeSelect = ({ onSelect, onLogout }) => (
   <div className="min-h-screen bg-brand-navy flex flex-col items-center justify-center p-6">
     <div className="text-center mb-10">
       <h1 className="text-2xl font-bold text-white mb-2">Bienvenido!</h1>
@@ -1525,13 +1525,22 @@ const OnboardingTypeSelect = ({ onSelect }) => (
         </div>
       </button>
     </div>
+
+    {onLogout && (
+      <button
+        onClick={onLogout}
+        className="mt-8 text-slate-400 text-sm underline hover:text-slate-200"
+      >
+        Cerrar sesión
+      </button>
+    )}
   </div>
 );
 
 // ============================================
 // ONBOARDING - LOCAL
 // ============================================
-const OnboardingLocal = ({ user, onComplete }) => {
+const OnboardingLocal = ({ user, onComplete, mode = 'initial', existingLocals = [], onCreated }) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -1563,16 +1572,25 @@ const OnboardingLocal = ({ user, onComplete }) => {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const { error } = await supabase.from('profiles').insert({
-        id: user.id, user_type: 'local',
-        full_name: formData.business_name, business_name: formData.business_name,
-        business_type: formData.business_type, cif: formData.cif,
-        phone: formData.phone, address: formData.address, city: formData.city,
-        latitude: formData.latitude, longitude: formData.longitude,
+      const newProfileId = crypto.randomUUID();
+      const { data, error } = await supabase.from('profiles').insert({
+        id: newProfileId,
+        auth_user_id: user.id,
+        user_type: 'local',
+        full_name: formData.business_name,
+        business_name: formData.business_name,
+        business_type: formData.business_type,
+        cif: formData.cif,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
         verification_status: 'pending',
-      });
+      }).select().single();
       if (error) throw error;
-      onComplete();
+      if (onCreated && data) onCreated(data);
+      else onComplete();
     } catch (err) {
       alert('Error al guardar: ' + err.message);
     } finally {
@@ -1587,9 +1605,24 @@ const OnboardingLocal = ({ user, onComplete }) => {
           <div className="w-16 h-16 bg-brand-orange/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <Building2 size={32} className="text-brand-orange" />
           </div>
-          <h1 className="text-xl font-bold text-white">Configura tu Local</h1>
+          <h1 className="text-xl font-bold text-white">{mode === 'add' ? 'Añadir nuevo Local' : 'Configura tu Local'}</h1>
           <p className="text-slate-400 text-sm">Paso {step} de 2</p>
         </div>
+
+        {mode === 'add' && existingLocals.length > 0 && (
+          <div className="bg-brand-navy-light rounded-2xl p-4 mb-5">
+            <p className="text-slate-200 text-sm font-semibold mb-2">Locales existentes</p>
+            <div className="space-y-1">
+              {existingLocals.map(l => (
+                <div key={l.id} className="text-slate-400 text-sm flex items-center gap-2">
+                  <Building2 size={14} className="text-slate-500" />
+                  <span>{l.business_name || 'Local'}</span>
+                  <span className="text-xs text-slate-600">{l.city || ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2 mb-6">
           <div className={`flex-1 h-1 rounded ${step >= 1 ? 'bg-brand-orange' : 'bg-slate-700'}`} />
@@ -1683,6 +1716,7 @@ const OnboardingStaff = ({ user, onComplete }) => {
 
       const { error } = await supabase.from('profiles').insert({
         id: user.id, user_type: 'staff',
+        auth_user_id: user.id,
         full_name: formData.full_name, phone: formData.phone,
         staff_role: formData.staff_role, skills: formData.skills,
         hourly_rate_min: formData.hourly_rate_min, city: formData.city,
@@ -2527,7 +2561,8 @@ const LocalSearchView = ({ currentStaffId, onClose, onSelectLocal }) => {
 // ============================================
 // VISTA LOCAL
 // ============================================
-const LocalView = ({ user, profile, onLogout, setProfile }) => {
+const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, onAddLocal, onLogout, setProfile }) => {
+  const localId = activeLocalId || profile?.id;
   const [showForm, setShowForm] = useState(false);
   const [formType, setFormType] = useState('extra');
   const [loading, setLoading] = useState(false);
@@ -2574,11 +2609,11 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
         if (selectedJob) loadApplications(selectedJob.id);
         loadNotifications();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => loadNotifications())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${localId}` }, () => loadNotifications())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user.id]);
+  }, [user.id, localId]);
 
   const loadJobChats = async (jobId) => {
     if (!jobId) return setJobChats([]);
@@ -2599,13 +2634,13 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     // Agrupar por la otra parte (staff) y quedarnos con el último mensaje
     const map = new Map();
     (data || []).forEach(m => {
-      const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
+      const otherId = m.sender_id === localId ? m.receiver_id : m.sender_id;
       if (!otherId) return;
       if (!map.has(otherId)) {
         map.set(otherId, {
           otherId,
-          otherName: (m.sender_id === user.id ? m.receiver.full_name : m.sender.full_name) || 'Usuario',
-          otherAvatar: (m.sender_id === user.id ? m.receiver.avatar_url : m.sender.avatar_url) || null,
+          otherName: (m.sender_id === localId ? m.receiver.full_name : m.sender.full_name) || 'Usuario',
+          otherAvatar: (m.sender_id === localId ? m.receiver.avatar_url : m.sender.avatar_url) || null,
           lastMessage: m.content,
           lastAt: m.created_at,
         });
@@ -2633,7 +2668,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     const { data } = await supabase
       .from('jobs')
       .select('*')
-      .eq('local_id', user.id)
+      .eq('local_id', localId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(20);
@@ -2653,7 +2688,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     const { data } = await supabase
       .from('favorites')
       .select('staff_id')
-      .eq('local_id', user.id);
+      .eq('local_id', localId);
     if (data) setFavorites(data.map(f => f.staff_id));
   };
 
@@ -2662,7 +2697,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     const { data: jobIds } = await supabase
       .from('jobs')
       .select('id')
-      .eq('local_id', user.id);
+      .eq('local_id', localId);
     
     if (!jobIds || jobIds.length === 0) {
       setAcceptedApplications([]);
@@ -2683,7 +2718,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', localId)
       .is('read_at', null)
       .order('created_at', { ascending: false })
       .limit(10);
@@ -2702,7 +2737,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
       await supabase
         .from('notifications')
         .update({ read_at: new Date().toISOString() })
-        .eq('user_id', user.id)
+        .eq('user_id', localId)
         .is('read_at', null);
     } catch (err) {
       console.error('Error marking notifications as read:', err);
@@ -2736,7 +2771,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
 
     try {
       const { error } = await supabase.from('jobs').insert({
-        local_id: user.id,
+        local_id: localId,
         role_required: formData.role,
         skills_required: formData.skillsRequired,
         shift_date: formData.date,
@@ -2853,10 +2888,10 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
 
   const toggleFavorite = async (staffId) => {
     if (favorites.includes(staffId)) {
-      await supabase.from('favorites').delete().eq('local_id', user.id).eq('staff_id', staffId);
+      await supabase.from('favorites').delete().eq('local_id', localId).eq('staff_id', staffId);
       setFavorites(prev => prev.filter(id => id !== staffId));
     } else {
-      await supabase.from('favorites').insert({ local_id: user.id, staff_id: staffId });
+      await supabase.from('favorites').insert({ local_id: localId, staff_id: staffId });
       setFavorites(prev => [...prev, staffId]);
     }
   };
@@ -2871,12 +2906,12 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   };
 
   if (chatWith) {
-    return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId || selectedJob?.id} onClose={() => setChatWith(null)} />;
+    return <ChatView userId={localId} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId || selectedJob?.id} onClose={() => setChatWith(null)} />;
   }
 
   if (showStaffSearch) {
     return <StaffSearchView
-      currentLocalId={user.id}
+      currentLocalId={localId}
       onClose={() => setShowStaffSearch(false)}
       onSelectStaff={(staff) => {
         setShowStaffSearch(false);
@@ -2907,6 +2942,29 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {(locals.length > 1 || onAddLocal) && (
+              <div className="flex items-center gap-2">
+                {locals.length > 1 && (
+                  <select
+                    value={localId}
+                    onChange={(e) => onSwitchLocal && onSwitchLocal(e.target.value)}
+                    className="bg-slate-800 text-white text-xs rounded-lg px-2 py-1 border border-slate-700"
+                    title="Cambiar de local"
+                  >
+                    {locals.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.business_name || 'Local'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {onAddLocal && (
+                  <button onClick={onAddLocal} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600" title="Añadir local">
+                    <Plus size={18} className="text-slate-200" />
+                  </button>
+                )}
+              </div>
+            )}
             <button onClick={() => setShowStaffSearch(true)} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600" title="Buscar Empleados">
               <Users size={20} className="text-slate-400" />
             </button>
@@ -2968,8 +3026,8 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
                       <button
                         onClick={async () => {
                           if (!confirm('Eliminar este chat?')) return;
-                          await supabase.from('messages').delete().eq('job_id', selectedJob?.id).or(`and(sender_id.eq.${user.id},receiver_id.eq.${c.otherId}),and(sender_id.eq.${c.otherId},receiver_id.eq.${user.id})`);
-                          await supabase.from('conversations').delete().eq('job_id', selectedJob?.id).or(`and(local_id.eq.${user.id},staff_id.eq.${c.otherId}),and(local_id.eq.${c.otherId},staff_id.eq.${user.id})`);
+                          await supabase.from('messages').delete().eq('job_id', selectedJob?.id).or(`and(sender_id.eq.${localId},receiver_id.eq.${c.otherId}),and(sender_id.eq.${c.otherId},receiver_id.eq.${localId})`);
+                          await supabase.from('conversations').delete().eq('job_id', selectedJob?.id).or(`and(local_id.eq.${localId},staff_id.eq.${c.otherId}),and(local_id.eq.${c.otherId},staff_id.eq.${localId})`);
                           await supabase.from('applications').update({ status: 'withdrawn' }).eq('job_id', selectedJob?.id).eq('staff_id', c.otherId);
                           loadJobChats(selectedJob?.id);
                           setAcceptedApplications(prev => prev.filter(a => !(a.job_id === selectedJob?.id && a.staff_id === c.otherId)));
@@ -3387,7 +3445,7 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
             try {
               const { error } = await supabase.from('reviews').insert({
                 job_id: reviewTargetLocal.jobId,
-                reviewer_id: user.id,
+                reviewer_id: localId,
                 reviewed_id: reviewTargetLocal.reviewedId,
                 attendance_present: attendancePresent,
                 rating,
@@ -4179,15 +4237,18 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [locals, setLocals] = useState([]);
+  const [activeLocalId, setActiveLocalId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
+  const [showAddLocal, setShowAddLocal] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUser(session.user);
-        loadProfile(session.user.id);
+        loadAccountContext(session.user.id);
       } else {
         setLoading(false);
       }
@@ -4196,10 +4257,12 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUser(session.user);
-        loadProfile(session.user.id);
+        loadAccountContext(session.user.id);
       } else {
         setUser(null);
         setProfile(null);
+        setLocals([]);
+        setActiveLocalId(null);
         setLoading(false);
       }
     });
@@ -4207,21 +4270,88 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadProfile = async (userId) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) {
-      setProfile(data);
-      setNeedsOnboarding(false);
-    } else {
+  const loadAccountContext = async (userId) => {
+    setLoading(true);
+    try {
+      let localProfiles = [];
+
+      // 1) Intentar por auth_user_id (multi-local). Si la columna no existe aún, caeremos al fallback legacy.
+      const { data: localsByAuth, error: localsByAuthErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_type', 'local')
+        .eq('auth_user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (localsByAuthErr) {
+        const msg = localsByAuthErr.message || '';
+        const missingAuthUserId = localsByAuthErr.code === '42703' || msg.toLowerCase().includes('auth_user_id');
+        if (!missingAuthUserId) throw localsByAuthErr;
+      } else if (localsByAuth) {
+        localProfiles = localsByAuth;
+      }
+
+      // 2) Fallback legacy: perfiles donde id==auth.uid() (compatibilidad)
+      const { data: legacyLocal, error: legacyErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_type', 'local')
+        .eq('id', userId)
+        .limit(1);
+
+      if (legacyErr) throw legacyErr;
+      if (legacyLocal && legacyLocal.length > 0) {
+        const legacy = legacyLocal[0];
+        if (!localProfiles.find(l => l.id === legacy.id)) {
+          localProfiles = [...localProfiles, legacy];
+        }
+      }
+
+      if (localProfiles && localProfiles.length > 0) {
+        setLocals(localProfiles);
+        const storedId = localStorage.getItem('activeLocalId');
+        const initialId = localProfiles.find(l => l.id === storedId)?.id || localProfiles[0].id;
+        setActiveLocalId(initialId);
+        localStorage.setItem('activeLocalId', initialId);
+        setProfile(localProfiles.find(l => l.id === initialId));
+        setNeedsOnboarding(false);
+        return;
+      }
+
+      setLocals([]);
+      setActiveLocalId(null);
+
+      const { data: staffProfiles, error: staffErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_type', 'staff')
+        .or(`auth_user_id.eq.${userId},id.eq.${userId}`)
+        .limit(1);
+
+      if (staffErr) throw staffErr;
+
+      if (staffProfiles && staffProfiles.length > 0) {
+        setProfile(staffProfiles[0]);
+        setNeedsOnboarding(false);
+      } else {
+        setProfile(null);
+        setNeedsOnboarding(true);
+      }
+    } catch (err) {
+      console.error('Error cargando contexto de cuenta:', err);
+      setProfile(null);
+      setLocals([]);
+      setActiveLocalId(null);
       setNeedsOnboarding(true);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleAuth = (authUser, isNew = false) => {
     setUser(authUser);
     if (isNew) setNeedsOnboarding(true);
-    else loadProfile(authUser.id);
+    else loadAccountContext(authUser.id);
   };
 
   const handleLogout = async () => {
@@ -4230,11 +4360,21 @@ export default function App() {
     setProfile(null);
     setNeedsOnboarding(false);
     setOnboardingType(null);
+    setLocals([]);
+    setActiveLocalId(null);
+    localStorage.removeItem('activeLocalId');
   };
 
   const handleOnboardingComplete = () => {
-    loadProfile(user.id);
+    loadAccountContext(user.id);
     setOnboardingType(null);
+  };
+
+  const switchActiveLocal = (newLocalId) => {
+    setActiveLocalId(newLocalId);
+    localStorage.setItem('activeLocalId', newLocalId);
+    const nextProfile = locals.find(l => l.id === newLocalId);
+    if (nextProfile) setProfile(nextProfile);
   };
 
   if (loading) return <LoadingSpinner />;
@@ -4242,12 +4382,42 @@ export default function App() {
   if (!user) return <AuthScreen onAuth={handleAuth} />;
 
   if (needsOnboarding) {
-    if (!onboardingType) return <OnboardingTypeSelect onSelect={setOnboardingType} />;
+    if (!onboardingType) return <OnboardingTypeSelect onSelect={setOnboardingType} onLogout={handleLogout} />;
     if (onboardingType === 'local') return <OnboardingLocal user={user} onComplete={handleOnboardingComplete} />;
     if (onboardingType === 'staff') return <OnboardingStaff user={user} onComplete={handleOnboardingComplete} />;
   }
 
-  if (profile?.user_type === 'local') return <LocalView user={user} profile={profile} onLogout={handleLogout} setProfile={setProfile} />;
+  if (showAddLocal) {
+    return (
+      <OnboardingLocal
+        user={user}
+        mode="add"
+        existingLocals={locals}
+        onComplete={() => setShowAddLocal(false)}
+        onCreated={(createdProfile) => {
+          setShowAddLocal(false);
+          loadAccountContext(user.id).then(() => {
+            switchActiveLocal(createdProfile.id);
+          });
+        }}
+      />
+    );
+  }
+
+  if (profile?.user_type === 'local') {
+    return (
+      <LocalView
+        user={user}
+        profile={profile}
+        locals={locals}
+        activeLocalId={activeLocalId}
+        onSwitchLocal={switchActiveLocal}
+        onAddLocal={() => setShowAddLocal(true)}
+        onLogout={handleLogout}
+        setProfile={setProfile}
+      />
+    );
+  }
   if (profile?.user_type === 'staff') return <StaffView user={user} profile={profile} onLogout={handleLogout} setProfile={setProfile} />;
 
   return <AuthScreen onAuth={handleAuth} />;

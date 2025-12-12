@@ -1,215 +1,107 @@
 # Configuración de Supabase Storage - Bucket de Avatars
 
-## 📋 Resumen de Cambios
+## Resumen
 
-Se ha añadido la funcionalidad de edición de perfil que incluye la subida de fotos de perfil (avatars). Para que esto funcione, necesitas crear un bucket de storage en Supabase.
+La app permite subir avatares de perfil. Con soporte **multi‑local**, una misma cuenta puede gestionar los avatares de varios locales, por lo que las policies deben validar la propiedad del perfil del archivo.
 
-## 🚀 Opción 1: Crear Bucket con SQL (Recomendado)
+## Opción 1: Crear bucket con SQL (recomendado)
 
 ### Paso 1: Ejecutar SQL
 1. Ve a tu proyecto en Supabase Dashboard
 2. En el menú lateral, selecciona **SQL Editor**
 3. Crea una nueva query
-4. Copia y pega el siguiente código:
+4. Copia y pega:
 
 ```sql
 -- Crear el bucket 'avatars'
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('avatars', 'avatars', true)
-ON CONFLICT (id) DO NOTHING;
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
 
--- Permitir que cualquiera pueda VER los avatars (público)
-CREATE POLICY "Avatars son públicos para ver"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'avatars');
+-- MULTI-LOCAL: policies recomendadas
+-- (No hace falta ALTER TABLE; storage.objects ya tiene RLS activado.)
 
--- Permitir que usuarios autenticados suban sus propios avatars
-CREATE POLICY "Usuarios pueden subir sus avatars"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (bucket_id = 'avatars');
+-- Lectura pública
+drop policy if exists "public read avatars" on storage.objects;
+create policy "public read avatars"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
 
--- Permitir que usuarios autenticados actualicen sus propios avatars
-CREATE POLICY "Usuarios pueden actualizar sus avatars"
-ON storage.objects FOR UPDATE
-TO authenticated
-USING (bucket_id = 'avatars');
-
--- Permitir que usuarios autenticados eliminen sus propios avatars
-CREATE POLICY "Usuarios pueden eliminar sus avatars"
-ON storage.objects FOR DELETE
-TO authenticated
-USING (bucket_id = 'avatars');
+-- Escritura solo por dueño del perfil (uuid inicial del nombre del archivo)
+drop policy if exists "owners manage avatars" on storage.objects;
+create policy "owners manage avatars"
+  on storage.objects for all
+  to authenticated
+  using (
+    bucket_id = 'avatars'
+    and (
+      auth.uid() = (regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid
+      or public.is_local_owner((regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid)
+    )
+  )
+  with check (
+    bucket_id = 'avatars'
+    and (
+      auth.uid() = (regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid
+      or public.is_local_owner((regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid)
+    )
+  );
 ```
 
-5. Haz clic en **Run** para ejecutar
+5. Haz clic en **Run**.
 
 ### Paso 2: Verificar
-Ejecuta esta query para verificar que se creó correctamente:
 
 ```sql
-SELECT * FROM storage.buckets WHERE id = 'avatars';
+select * from storage.buckets where id = 'avatars';
 ```
 
-Deberías ver una fila con:
+Debes ver:
 - **id**: avatars
-- **name**: avatars
 - **public**: true
 
----
+## Opción 2: Crear bucket desde la interfaz
 
-## 🖱️ Opción 2: Crear Bucket desde la Interfaz Web
+### Paso 1: Crear el bucket
+1. **Storage → New bucket**
+2. **Name**: `avatars`
+3. **Public bucket**: sí
+4. Crear.
 
-### Paso 1: Crear el Bucket
-1. Ve a tu proyecto en Supabase Dashboard
-2. En el menú lateral, selecciona **Storage**
-3. Haz clic en **"New bucket"**
-4. Configura así:
-   - **Name**: `avatars`
-   - **Public bucket**: ✅ SÍ (marcado)
-   - **File size limit**: 5MB (opcional pero recomendado)
-   - **Allowed MIME types**: `image/jpeg, image/png, image/webp, image/jpg` (opcional)
-5. Haz clic en **"Create bucket"**
+### Paso 2: Policies
+En **Storage > avatars > Policies**, crea:
 
-### Paso 2: Configurar Políticas de Seguridad
-
-Una vez creado el bucket:
-
-1. Ve a **Storage > avatars > Policies**
-2. Haz clic en **"New Policy"**
-3. Crea las siguientes 4 políticas:
-
-#### Política 1: Lectura pública
+#### Policy 1: Lectura pública
 ```
-Policy name: Avatars son públicos para ver
+Policy name: public read avatars
 Operation: SELECT
 Target roles: public
 USING expression: bucket_id = 'avatars'
 ```
 
-#### Política 2: Subir avatars
+#### Policy 2: Gestión (ALL) por dueños
 ```
-Policy name: Usuarios pueden subir sus avatars
-Operation: INSERT
+Policy name: owners manage avatars
+Operation: ALL
 Target roles: authenticated
-WITH CHECK expression: bucket_id = 'avatars'
+USING expression:
+bucket_id = 'avatars' AND (
+  auth.uid() = (regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid
+  OR public.is_local_owner((regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid)
+)
+WITH CHECK expression:
+bucket_id = 'avatars' AND (
+  auth.uid() = (regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid
+  OR public.is_local_owner((regexp_match(name, '^([0-9a-fA-F-]{36})[\\/_-]'))[1]::uuid)
+)
 ```
 
-#### Política 3: Actualizar avatars
-```
-Policy name: Usuarios pueden actualizar sus avatars
-Operation: UPDATE
-Target roles: authenticated
-USING expression: bucket_id = 'avatars'
-```
+## Verificación rápida
+1. Inicia sesión como local.
+2. Cambia de local activo y sube un avatar distinto en cada uno.
+3. En **Storage > avatars** deben aparecer archivos con prefijo del UUID de cada perfil.
 
-#### Política 4: Eliminar avatars
-```
-Policy name: Usuarios pueden eliminar sus avatars
-Operation: DELETE
-Target roles: authenticated
-USING expression: bucket_id = 'avatars'
-```
-
----
-
-## ✅ Verificación
-
-Para verificar que todo funciona:
-
-1. Inicia sesión en tu aplicación
-2. Intenta editar tu perfil y subir una foto
-3. Ve a **Storage > avatars** en Supabase Dashboard
-4. Deberías ver el archivo subido
-5. La foto debería aparecer en tu perfil
-
----
-
-## 🔧 Configuración Avanzada (Opcional)
-
-### Limitar tamaño de archivo
-Si quieres limitar el tamaño de los avatars a 5MB:
-1. Ve a **Storage > avatars > Settings**
-2. En **File size limit**, pon `5242880` (5MB en bytes)
-3. Guarda cambios
-
-### Restringir tipos de archivo
-Para permitir solo imágenes:
-1. Ve a **Storage > avatars > Settings**
-2. En **Allowed MIME types**, añade:
-   ```
-   image/jpeg
-   image/png
-   image/webp
-   image/jpg
-   ```
-3. Guarda cambios
-
----
-
-## 🌐 URL de los Avatars
-
-Los avatars subidos tendrán URLs públicas con este formato:
-
-```
-https://[tu-proyecto-id].supabase.co/storage/v1/object/public/avatars/[nombre-archivo].jpg
-```
-
-Ejemplo:
-```
-https://oknpgpencszibnmndyzm.supabase.co/storage/v1/object/public/avatars/abc123-1234567890.jpg
-```
-
----
-
-## ❓ Solución de Problemas
-
-### Error: "new row violates row-level security policy"
-**Causa**: Las políticas de RLS no están configuradas correctamente.
-**Solución**: Asegúrate de haber creado las 4 políticas mencionadas arriba.
-
-### Error: "Bucket not found"
-**Causa**: El bucket no se creó correctamente.
-**Solución**: Verifica que el bucket 'avatars' existe en Storage y está marcado como público.
-
-### Las imágenes no se ven
-**Causa**: El bucket no está marcado como público.
-**Solución**:
-1. Ve a **Storage > avatars > Settings**
-2. Marca **Public bucket** como true
-3. Guarda cambios
-
-### Error al subir archivo
-**Causa**: Puede ser por tamaño de archivo o tipo MIME no permitido.
-**Solución**:
-- Verifica el tamaño del archivo (debe ser < 5MB)
-- Verifica que es una imagen válida (JPG, PNG, WEBP)
-
----
-
-## 📝 Notas Importantes
-
-- ✅ El bucket debe ser **público** para que las fotos se vean sin autenticación
-- ✅ Solo usuarios autenticados pueden subir/modificar/eliminar archivos
-- ✅ Cualquiera puede **ver** los avatars (son públicos)
-- ✅ El código de la app ya está configurado para usar el bucket 'avatars'
-- ⚠️ No olvides crear las 4 políticas de seguridad
-
----
-
-## 🎯 Próximos Pasos
-
-Una vez configurado el bucket de avatars:
-
-1. ✅ Prueba subir una foto desde la app
-2. ✅ Verifica que se ve correctamente
-3. ✅ Prueba editar el perfil completo
-4. ✅ Verifica que los cambios se guardan
-
----
-
-## 📚 Referencias
-
-- [Supabase Storage Documentation](https://supabase.com/docs/guides/storage)
-- [Storage Policies](https://supabase.com/docs/guides/storage/security/access-control)
-- [File Upload Limits](https://supabase.com/docs/guides/storage#file-size-limits)
+## Notas
+- El bucket `cvs` no requiere cambios para multi‑local (los CV pertenecen a staff).
+- Estas policies están también versionadas en `supabase/migrations/014_storage_multi_local.sql`.
+- Si el SQL Editor te da `must be owner of table objects`, ejecuta la query con rol **postgres** (selector arriba a la derecha) o aplica las migraciones con `supabase db push`.
