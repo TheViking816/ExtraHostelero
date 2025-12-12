@@ -15,7 +15,8 @@
       "Bash(git branch:*)",
       "Bash(git push:*)",
       "Bash(npm install:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(npx web-push:*)"
     ],
     "deny": [],
     "ask": []

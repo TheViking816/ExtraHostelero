@@ -69,6 +69,140 @@ const formatDateTime = (dateStr) => {
 };
 
 // ============================================
+// PUSH NOTIFICATION UTILITIES
+// ============================================
+const VAPID_PUBLIC_KEY = 'BFD3EPrf6t6d-TVypeh-KHOvRsamoYwihZ9Ilb7uB20D5xlVQYVgfEoXgMT47g1arT0mOwvK-sgiuVsnKyDnylw'
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function subscribeToPushNotifications(userId) {
+  try {
+    console.log('[subscribeToPushNotifications] Starting for userId:', userId);
+
+    // Check if service worker is supported
+    if (!('serviceWorker' in navigator)) {
+      console.log('Service Worker not supported');
+      return false;
+    }
+
+    // Check if push notifications are supported
+    if (!('PushManager' in window)) {
+      console.log('Push notifications not supported');
+      return false;
+    }
+
+    console.log('[subscribeToPushNotifications] Requesting notification permission...');
+    // Request notification permission
+    const permission = await Notification.requestPermission();
+    console.log('[subscribeToPushNotifications] Permission result:', permission);
+
+    if (permission !== 'granted') {
+      console.log('Notification permission denied');
+      return false;
+    }
+
+    console.log('[subscribeToPushNotifications] Getting service worker registration...');
+    // Get service worker registration
+    const registration = await navigator.serviceWorker.ready;
+    console.log('[subscribeToPushNotifications] Service worker ready:', registration);
+
+    console.log('[subscribeToPushNotifications] Subscribing to push manager...');
+    // Subscribe to push notifications
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+    console.log('[subscribeToPushNotifications] Push subscription created:', subscription);
+
+    // Save subscription to database
+    const subscriptionData = subscription.toJSON();
+    console.log('[subscribeToPushNotifications] Subscription data:', subscriptionData);
+
+    console.log('[subscribeToPushNotifications] Saving to database...');
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .upsert({
+        user_id: userId,
+        endpoint: subscriptionData.endpoint,
+        p256dh: subscriptionData.keys.p256dh,
+        auth: subscriptionData.keys.auth,
+        user_agent: navigator.userAgent,
+        active: true
+      }, {
+        onConflict: 'endpoint',
+        ignoreDuplicates: false
+      })
+      .select();
+
+    if (error) {
+      console.error('[subscribeToPushNotifications] Database error:', error);
+      return false;
+    }
+
+    console.log('[subscribeToPushNotifications] Saved to database:', data);
+    console.log('[subscribeToPushNotifications] SUCCESS!');
+    return true;
+  } catch (error) {
+    console.error('[subscribeToPushNotifications] Error:', error);
+    return false;
+  }
+}
+
+async function unsubscribeFromPushNotifications(userId) {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+
+    if (subscription) {
+      await subscription.unsubscribe();
+
+      // Mark as inactive in database
+      await supabase
+        .from('push_subscriptions')
+        .update({ active: false })
+        .eq('user_id', userId)
+        .eq('endpoint', subscription.endpoint);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error unsubscribing from push:', error);
+    return false;
+  }
+}
+
+async function checkPushSubscriptionStatus() {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return { supported: false, subscribed: false, permission: 'default' };
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+
+    return {
+      supported: true,
+      subscribed: !!subscription,
+      permission: Notification.permission
+    };
+  } catch (error) {
+    console.error('Error checking push status:', error);
+    return { supported: false, subscribed: false, permission: 'default' };
+  }
+}
+
+// ============================================
 // COMPONENTES UI BASE
 // ============================================
 const RoleBadge = ({ role, size = 'md' }) => {
@@ -119,6 +253,81 @@ const LoadingSpinner = () => (
     <Loader2 size={32} className="text-brand-orange animate-spin" />
   </div>
 );
+
+// ============================================
+// PUSH NOTIFICATION PROMPT COMPONENT
+// ============================================
+const PushNotificationPrompt = ({ onClose, onEnable }) => {
+  const [enabling, setEnabling] = useState(false);
+
+  const handleEnable = async () => {
+    setEnabling(true);
+    const success = await onEnable();
+    setEnabling(false);
+    if (success) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-brand-navy-light rounded-2xl p-6 max-w-md w-full border border-slate-700">
+        <div className="flex items-center justify-between mb-4">
+          <Bell size={32} className="text-brand-orange" />
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X size={24} />
+          </button>
+        </div>
+
+        <h2 className="text-xl font-bold text-white mb-2">
+          Activa las notificaciones
+        </h2>
+
+        <p className="text-slate-300 mb-4">
+          Recibe alertas instantáneas cuando:
+        </p>
+
+        <ul className="space-y-2 mb-6">
+          <li className="flex items-start gap-2 text-slate-300">
+            <CheckCircle size={20} className="text-green-500 mt-0.5 flex-shrink-0" />
+            <span>Se publique una nueva oferta para tu rol</span>
+          </li>
+          <li className="flex items-start gap-2 text-slate-300">
+            <CheckCircle size={20} className="text-green-500 mt-0.5 flex-shrink-0" />
+            <span>Recibas un mensaje de un local</span>
+          </li>
+          <li className="flex items-start gap-2 text-slate-300">
+            <CheckCircle size={20} className="text-green-500 mt-0.5 flex-shrink-0" />
+            <span>Tu candidatura sea aceptada</span>
+          </li>
+        </ul>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-slate-700 text-white rounded-xl hover:bg-slate-600 transition"
+          >
+            Ahora no
+          </button>
+          <button
+            onClick={handleEnable}
+            disabled={enabling}
+            className="flex-1 px-4 py-3 bg-brand-orange text-white rounded-xl hover:bg-orange-600 transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {enabling ? (
+              <Loader2 size={20} className="animate-spin" />
+            ) : (
+              <>
+                <Bell size={20} />
+                Activar
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const StarRating = ({ rating, reviews }) => (
   <div className="flex items-center gap-1">
@@ -768,7 +977,10 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     loadMessages();
@@ -842,21 +1054,101 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
       .subscribe();
   };
 
+  // Handle file selection
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('El archivo es demasiado grande. Máximo 10MB.');
+      return;
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert('Tipo de archivo no permitido. Usa: imágenes (JPG, PNG, WEBP), PDF o documentos Word.');
+      return;
+    }
+
+    setSelectedFile(file);
+  };
+
+  // Upload file to Supabase Storage
+  const uploadFile = async (file) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}/${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Upload error:', error);
+      throw new Error('Error al subir el archivo');
+    }
+
+    // Get signed URL (private bucket requires signed URLs)
+    const { data: urlData } = await supabase.storage
+      .from('chat-attachments')
+      .createSignedUrl(fileName, 3600 * 24 * 365); // 1 year expiry
+
+    return {
+      path: fileName,
+      url: urlData.signedUrl,
+      name: file.name,
+      size: file.size,
+      type: file.type
+    };
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+
+    // Require either text or file
+    if (!newMessage.trim() && !selectedFile) return;
 
     setSending(true);
     const messageContent = newMessage.trim();
+    const fileToUpload = selectedFile;
+
+    // Clear inputs immediately for better UX
     setNewMessage('');
+    setSelectedFile(null);
 
     try {
+      let attachmentData = null;
+
+      // Upload file if selected
+      if (fileToUpload) {
+        setUploadingFile(true);
+        attachmentData = await uploadFile(fileToUpload);
+        setUploadingFile(false);
+      }
+
+      // Build message object
       const message = {
         sender_id: userId,
         receiver_id: otherUserId,
         job_id: jobId || null,
-        content: messageContent,
-        message_type: 'text'
+        content: messageContent || (attachmentData ? attachmentData.name : ''),
+        message_type: attachmentData ?
+          (attachmentData.type.startsWith('image/') ? 'image' : 'file') :
+          'text',
+        attachment_url: attachmentData?.url || null,
+        attachment_name: attachmentData?.name || null,
+        attachment_size: attachmentData?.size || null,
+        attachment_mime_type: attachmentData?.type || null
       };
 
       const { data, error } = await supabase
@@ -867,17 +1159,22 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 
       if (error) {
         console.error('Error sending message:', error);
-        setNewMessage(messageContent); // Restaurar el mensaje para reintentar
+        // Restore inputs on error
+        setNewMessage(messageContent);
+        setSelectedFile(fileToUpload);
         alert('Error al enviar mensaje: ' + error.message);
       } else if (data) {
         setMessages(prev => [...prev, data]);
       }
     } catch (err) {
       console.error('Error:', err);
+      // Restore inputs on error
       setNewMessage(messageContent);
-      alert('Error al enviar mensaje');
+      setSelectedFile(fileToUpload);
+      alert(err.message || 'Error al enviar mensaje');
     } finally {
       setSending(false);
+      setUploadingFile(false);
     }
   };
 
@@ -940,43 +1237,123 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
             <p className="text-slate-600 text-sm">Envia el primer mensaje</p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.sender_id === userId ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                msg.sender_id === userId
-                  ? 'bg-brand-orange text-white rounded-br-sm'
-                  : 'bg-slate-700 text-white rounded-bl-sm'
-              }`}>
-                <p>{msg.content}</p>
-                <p className={`text-xs mt-1 ${msg.sender_id === userId ? 'text-white/60' : 'text-slate-400'}`}>
-                  {new Date(msg.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                </p>
+          messages.map((msg) => {
+            const isOwn = msg.sender_id === userId;
+            return (
+              <div
+                key={msg.id}
+                className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                  isOwn
+                    ? 'bg-brand-orange text-white rounded-br-sm'
+                    : 'bg-slate-700 text-white rounded-bl-sm'
+                }`}>
+                  {/* Image attachment */}
+                  {msg.message_type === 'image' && msg.attachment_url && (
+                    <img
+                      src={msg.attachment_url}
+                      alt={msg.attachment_name || 'Image'}
+                      className="rounded-lg mb-2 max-w-full max-h-64 cursor-pointer"
+                      onClick={() => window.open(msg.attachment_url, '_blank')}
+                    />
+                  )}
+
+                  {/* File attachment */}
+                  {msg.message_type === 'file' && msg.attachment_url && (
+                    <a
+                      href={msg.attachment_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 p-2 bg-white/10 rounded-lg mb-2 hover:bg-white/20 transition"
+                    >
+                      <File size={20} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{msg.attachment_name || 'Archivo'}</p>
+                        {msg.attachment_size && (
+                          <p className="text-xs opacity-75">
+                            {(msg.attachment_size / 1024).toFixed(1)} KB
+                          </p>
+                        )}
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Text content */}
+                  {msg.content && <p>{msg.content}</p>}
+
+                  <p className={`text-xs mt-1 ${isOwn ? 'text-white/60' : 'text-slate-400'}`}>
+                    {new Date(msg.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
 
       <form onSubmit={sendMessage} className="p-4 bg-brand-navy-light border-t border-slate-700">
+        {/* File preview */}
+        {selectedFile && (
+          <div className="mb-2 flex items-center gap-2 p-2 bg-slate-700 rounded-lg">
+            {selectedFile.type.startsWith('image/') ? (
+              <ImageIcon size={20} className="text-brand-orange" />
+            ) : (
+              <File size={20} className="text-brand-orange" />
+            )}
+            <span className="text-sm text-white flex-1 truncate">{selectedFile.name}</span>
+            <button
+              type="button"
+              onClick={() => setSelectedFile(null)}
+              className="text-slate-400 hover:text-white"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        )}
+
         <div className="flex gap-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.doc,.docx"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+
+          {/* Attachment button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || uploadingFile}
+            className="bg-slate-700 text-white p-3 rounded-xl disabled:opacity-50 hover:bg-slate-600 transition"
+          >
+            <ImageIcon size={20} />
+          </button>
+
+          {/* Text input */}
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            disabled={sending}
+            disabled={sending || uploadingFile}
             className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl outline-none disabled:opacity-50"
             placeholder="Escribe un mensaje..."
           />
+
+          {/* Send button */}
           <button
             type="submit"
-            disabled={!newMessage.trim() || sending}
+            disabled={(!newMessage.trim() && !selectedFile) || sending || uploadingFile}
             className="bg-brand-orange text-white p-3 rounded-xl disabled:opacity-50 flex items-center justify-center"
           >
-            {sending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+            {(sending || uploadingFile) ? (
+              <Loader2 size={20} className="animate-spin" />
+            ) : (
+              <Send size={20} />
+            )}
           </button>
         </div>
       </form>
@@ -1278,6 +1655,7 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
     hourly_rate_min: profile?.hourly_rate_min || 10,
     cv_text: profile?.cv_text || '',
     cv_url: profile?.cv_url || '',
+    staff_role: profile?.staff_role || 'camarero',
   });
 
   const handleAvatarChange = (e) => {
@@ -1449,6 +1827,28 @@ const EditProfileModal = ({ profile, onSave, onClose }) => {
           onChange={(e) => setFormData({ ...formData, city: e.target.value })}
           className="w-full bg-slate-700 text-white px-4 py-3 rounded-xl outline-none"
         />
+      </div>
+
+      <div className="bg-brand-navy-light rounded-xl p-4">
+        <label className="text-slate-400 text-sm mb-3 block">Tu puesto principal</label>
+        <p className="text-xs text-slate-400 mb-3">Al cambiar tu puesto, recibirás notificaciones solo de las ofertas que coincidan con el nuevo rol</p>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(ROLES).map(([key, role]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFormData({ ...formData, staff_role: key })}
+              className={`p-3 rounded-xl text-left transition-all ${
+                formData.staff_role === key
+                  ? 'bg-brand-orange text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              <role.icon size={20} className="mb-1" />
+              <span className="text-sm font-medium block">{role.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="bg-brand-navy-light rounded-xl p-4">
@@ -3722,11 +4122,14 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
   const [reviewTargetLocal, setReviewTargetLocal] = useState(null);
   const [showLocalSearch, setShowLocalSearch] = useState(false);
   const [showChats, setShowChats] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [checkingPush, setCheckingPush] = useState(false);
 
   useEffect(() => {
     loadJobs();
     loadMyApplications();
     loadNotifications();
+    checkPushStatus();
 
     const channel = supabase.channel('staff-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => loadJobs())
@@ -3827,6 +4230,60 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
       setUnreadNotifications(0);
     } catch (err) {
       console.error('Error loading notifications:', err);
+    }
+  };
+
+  const checkPushStatus = async () => {
+    try {
+      const status = await checkPushSubscriptionStatus();
+      console.log('Push status:', status);
+      setPushEnabled(status.subscribed || false);
+    } catch (err) {
+      console.error('Error checking push status:', err);
+      setPushEnabled(false);
+    }
+  };
+
+  const handleEnablePushNotifications = async () => {
+    if (checkingPush) return;
+    setCheckingPush(true);
+
+    console.log('Starting push notification subscription...');
+
+    try {
+      if (!('Notification' in window)) {
+        console.error('Notification API not supported');
+        alert('Tu navegador no soporta notificaciones');
+        setCheckingPush(false);
+        return;
+      }
+
+      console.log('Current permission:', Notification.permission);
+
+      if (Notification.permission === 'denied') {
+        console.error('Notification permission denied');
+        alert('Las notificaciones están bloqueadas. Ve a la configuración de tu navegador para habilitarlas.');
+        setCheckingPush(false);
+        return;
+      }
+
+      console.log('Calling subscribeToPushNotifications with userId:', profile.id);
+      const success = await subscribeToPushNotifications(profile.id);
+      console.log('subscribeToPushNotifications result:', success);
+
+      if (success) {
+        setPushEnabled(true);
+        await checkPushStatus(); // Recheck status
+        alert('✅ Notificaciones habilitadas! Recibirás alertas de nuevas ofertas, mensajes y candidaturas.');
+      } else {
+        console.error('subscribeToPushNotifications returned false');
+        alert('No se pudieron habilitar las notificaciones. Revisa la consola del navegador para más detalles.');
+      }
+    } catch (err) {
+      console.error('Error enabling push:', err);
+      alert('Error al habilitar notificaciones: ' + err.message);
+    } finally {
+      setCheckingPush(false);
     }
   };
 
@@ -4369,6 +4826,50 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
           </div>
         )}
 
+        {/* Push Notifications Section */}
+        <div className="mb-4">
+          <div className={`p-4 rounded-xl border-2 ${pushEnabled ? 'bg-emerald-500/10 border-emerald-500/50' : 'bg-orange-500/10 border-orange-500/50'}`}>
+            <div className="flex items-start gap-3">
+              <Bell size={24} className={pushEnabled ? 'text-emerald-400 flex-shrink-0' : 'text-orange-400 flex-shrink-0'} />
+              <div className="flex-1 min-w-0">
+                <h4 className={`font-semibold mb-1 ${pushEnabled ? 'text-emerald-400' : 'text-orange-400'}`}>
+                  {pushEnabled ? '✓ Notificaciones Activadas' : '⚠ Notificaciones Desactivadas'}
+                </h4>
+                <p className="text-slate-300 text-xs mb-3">
+                  {pushEnabled
+                    ? 'Recibirás alertas de nuevas ofertas, mensajes y candidaturas'
+                    : 'Activa las notificaciones para no perderte nuevas ofertas de trabajo'}
+                </p>
+                {!pushEnabled && (
+                  <button
+                    onClick={handleEnablePushNotifications}
+                    disabled={checkingPush}
+                    className="w-full bg-brand-orange text-white py-2 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:bg-orange-600 transition disabled:opacity-50"
+                  >
+                    {checkingPush ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Habilitando...
+                      </>
+                    ) : (
+                      <>
+                        <Bell size={16} />
+                        Activar Notificaciones
+                      </>
+                    )}
+                  </button>
+                )}
+                {pushEnabled && (
+                  <div className="flex items-center gap-2 text-xs text-emerald-400">
+                    <CheckCircle size={14} />
+                    <span>Recibirás notificaciones en tiempo real</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <button
           onClick={() => { setShowProfile(false); setShowEditProfile(true); }}
           className="w-full bg-brand-orange text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
@@ -4491,6 +4992,7 @@ export default function App() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingType, setOnboardingType] = useState(null);
   const [showAddLocal, setShowAddLocal] = useState(false);
+  const [showPushPrompt, setShowPushPrompt] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -4625,6 +5127,56 @@ export default function App() {
     if (nextProfile) setProfile(nextProfile);
   };
 
+  // Check and prompt for push notifications after login
+  useEffect(() => {
+    if (!user || !profile) return;
+
+    const checkAndPromptPushNotifications = async () => {
+      const status = await checkPushSubscriptionStatus();
+
+      // Only prompt if supported, not subscribed, and permission not denied
+      if (status.supported && !status.subscribed && status.permission === 'default') {
+        // Show prompt after 10 seconds (don't be annoying immediately)
+        setTimeout(() => {
+          setShowPushPrompt(true);
+        }, 10000);
+      } else if (status.supported && !status.subscribed && status.permission === 'granted') {
+        // Permission granted but not subscribed - subscribe automatically
+        await subscribeToPushNotifications(profile.id);
+      }
+    };
+
+    checkAndPromptPushNotifications();
+  }, [user, profile]);
+
+  // Handle deep links from push notifications
+  useEffect(() => {
+    if (!user || !profile) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
+    const id = params.get('id');
+    const chatUser = params.get('user');
+    const chatJob = params.get('job');
+
+    if (view) {
+      // Handle different view types
+      if (view === 'job' && id) {
+        // TODO: Navigate to job detail (implementation depends on your routing logic)
+        console.log('Deep link to job:', id);
+      } else if (view === 'chat' && chatUser) {
+        // TODO: Open chat (implementation depends on your routing logic)
+        console.log('Deep link to chat with user:', chatUser, 'job:', chatJob);
+      } else if (view === 'jobs') {
+        // TODO: Navigate to jobs list
+        console.log('Deep link to jobs list');
+      }
+
+      // Clear URL params after handling
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [user, profile, window.location.search]);
+
   if (loading) return <LoadingSpinner />;
 
   if (!user) return <AuthScreen onAuth={handleAuth} />;
@@ -4654,19 +5206,46 @@ export default function App() {
 
   if (profile?.user_type === 'local') {
     return (
-      <LocalView
-        user={user}
-        profile={profile}
-        locals={locals}
-        activeLocalId={activeLocalId}
-        onSwitchLocal={switchActiveLocal}
-        onAddLocal={() => setShowAddLocal(true)}
-        onLogout={handleLogout}
-        setProfile={setProfile}
-      />
+      <>
+        <LocalView
+          user={user}
+          profile={profile}
+          locals={locals}
+          activeLocalId={activeLocalId}
+          onSwitchLocal={switchActiveLocal}
+          onAddLocal={() => setShowAddLocal(true)}
+          onLogout={handleLogout}
+          setProfile={setProfile}
+        />
+        {showPushPrompt && (
+          <PushNotificationPrompt
+            onClose={() => setShowPushPrompt(false)}
+            onEnable={async () => {
+              const success = await subscribeToPushNotifications(profile.id);
+              return success;
+            }}
+          />
+        )}
+      </>
     );
   }
-  if (profile?.user_type === 'staff') return <StaffView user={user} profile={profile} onLogout={handleLogout} setProfile={setProfile} />;
+
+  if (profile?.user_type === 'staff') {
+    return (
+      <>
+        <StaffView user={user} profile={profile} onLogout={handleLogout} setProfile={setProfile} />
+        {showPushPrompt && (
+          <PushNotificationPrompt
+            onClose={() => setShowPushPrompt(false)}
+            onEnable={async () => {
+              const success = await subscribeToPushNotifications(profile.id);
+              return success;
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   return <AuthScreen onAuth={handleAuth} />;
 }
