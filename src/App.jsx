@@ -36,7 +36,8 @@ const ALL_SKILLS = [
   'Bandeja', 'Tirar Canas', 'Corte Jamon', 'Cocteleria', 'Barista',
   'TPV', 'Ingles', 'Frances', 'Aleman', 'Plancha', 'Frituras',
   'Horno', 'Pasteleria', 'Sushi', 'Parrilla', 'APPCC', 'Sommelier',
-  'Gestion caja', 'Reservas', 'Delivery'
+  'Gestion caja', 'Reservas', 'Delivery', 'Arroces', 'Bocadillos',
+  'Alto volumen', 'Josper', 'Rational'
 ];
 
 const CERTIFICATIONS = [
@@ -1785,6 +1786,745 @@ const OnboardingStaff = ({ user, onComplete }) => {
 };
 
 // ============================================
+// LOCAL PROFILE EDIT VIEW
+// ============================================
+const LocalProfileEditView = ({ profile, onClose, onUpdate }) => {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    business_name: profile.business_name || '',
+    business_type: profile.business_type || '',
+    address: profile.address || '',
+    city: profile.city || '',
+    phone: profile.phone || '',
+    bio: profile.bio || '',
+    service_description: profile.service_description || '',
+  });
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url);
+
+  const handleAvatarChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      let avatar_url = profile.avatar_url;
+
+      // Upload avatar if changed
+      if (avatarFile) {
+        const fileName = `${profile.id}-${Date.now()}.jpg`;
+        const { data, error } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, avatarFile, { upsert: true });
+
+        if (error) throw error;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        avatar_url = publicUrl;
+      }
+
+      // Update profile
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          ...formData,
+          avatar_url,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', profile.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      alert('Perfil actualizado correctamente');
+      onUpdate(data);
+      onClose();
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      alert('Error al actualizar el perfil: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900 z-50 overflow-y-auto">
+      <div className="min-h-screen p-4">
+        <div className="max-w-2xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-white">Editar Perfil</h1>
+            <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
+              <X size={24} className="text-slate-400" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Avatar */}
+            <div className="bg-slate-800 rounded-xl p-6">
+              <label className="block text-sm font-medium text-slate-300 mb-3">Foto de Perfil</label>
+              <div className="flex items-center gap-4">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-slate-700">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Building2 size={32} className="text-slate-500" />
+                    </div>
+                  )}
+                </div>
+                <label className="cursor-pointer bg-brand-orange text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition">
+                  <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                  <Camera size={18} className="inline mr-2" />
+                  Cambiar Foto
+                </label>
+              </div>
+            </div>
+
+            {/* Business Info */}
+            <div className="bg-slate-800 rounded-xl p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Nombre del Negocio</label>
+                <input
+                  type="text"
+                  value={formData.business_name}
+                  onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Tipo de Negocio</label>
+                <select
+                  value={formData.business_type}
+                  onChange={(e) => setFormData({ ...formData, business_type: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                >
+                  <option value="">Seleccionar...</option>
+                  <option value="restaurante">Restaurante</option>
+                  <option value="bar">Bar</option>
+                  <option value="cafeteria">Cafetería</option>
+                  <option value="hotel">Hotel</option>
+                  <option value="catering">Catering</option>
+                  <option value="pub">Pub</option>
+                  <option value="discoteca">Discoteca</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Teléfono</label>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Dirección</label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Ciudad</label>
+                <input
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Descripción Breve</label>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                  rows={3}
+                  placeholder="Cuéntanos sobre tu negocio..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Descripción del Servicio / Tipo de Comida</label>
+                <textarea
+                  value={formData.service_description}
+                  onChange={(e) => setFormData({ ...formData, service_description: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+                  rows={3}
+                  placeholder="Ej: Cocina mediterránea, tapas, comida italiana..."
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-3 bg-slate-700 text-white rounded-xl hover:bg-slate-600 transition"
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-6 py-3 bg-brand-orange text-white rounded-xl hover:bg-orange-600 transition disabled:opacity-50"
+                disabled={loading}
+              >
+                {loading ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// STAFF SEARCH VIEW (para Locales)
+// ============================================
+const StaffSearchView = ({ currentLocalId, onClose, onSelectStaff }) => {
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ role: '', minRating: 0, minReliability: 0 });
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
+
+  useEffect(() => {
+    loadStaff();
+  }, [filters]);
+
+  const loadStaff = async () => {
+    setLoading(true);
+    try {
+      const { getAllStaff } = await import('./lib/supabase.js');
+      const data = await getAllStaff(filters);
+      setStaff(data || []);
+    } catch (error) {
+      console.error('Error loading staff:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChatWith = async (staffMember) => {
+    try {
+      const { createOrGetConversation } = await import('./lib/supabase.js');
+      await createOrGetConversation(currentLocalId, staffMember.id);
+      onSelectStaff(staffMember);
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      alert('Error al iniciar chat');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900 z-50 overflow-y-auto">
+      <div className="min-h-screen p-4">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Users size={28} />
+              Buscar Empleados
+            </h1>
+            <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
+              <X size={24} className="text-slate-400" />
+            </button>
+          </div>
+
+          {/* Filters */}
+          <div className="bg-slate-800 rounded-xl p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Puesto</label>
+                <select
+                  value={filters.role}
+                  onChange={(e) => setFilters({ ...filters, role: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600"
+                >
+                  <option value="">Todos los puestos</option>
+                  <option value="jefe_cocina">Jefe de Cocina</option>
+                  <option value="cocinero">Cocinero</option>
+                  <option value="encargado">Encargado</option>
+                  <option value="segundo_encargado">2º Encargado</option>
+                  <option value="camarero">Camarero</option>
+                  <option value="ayudante_cocina">Ayudante Cocina</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Valoración Mínima</label>
+                <select
+                  value={filters.minRating}
+                  onChange={(e) => setFilters({ ...filters, minRating: Number(e.target.value) })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600"
+                >
+                  <option value="0">Todas</option>
+                  <option value="3">3+ ⭐</option>
+                  <option value="4">4+ ⭐</option>
+                  <option value="4.5">4.5+ ⭐</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Fiabilidad Mínima</label>
+                <select
+                  value={filters.minReliability}
+                  onChange={(e) => setFilters({ ...filters, minReliability: Number(e.target.value) })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600"
+                >
+                  <option value="0">Todas</option>
+                  <option value="70">70+</option>
+                  <option value="80">80+</option>
+                  <option value="90">90+</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Results */}
+          {loading ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {staff.length === 0 ? (
+                <div className="col-span-full text-center text-slate-400 py-12">
+                  No se encontraron empleados con los filtros seleccionados
+                </div>
+              ) : (
+                staff.map((member) => (
+                  <div key={member.id} className="bg-slate-800 rounded-xl p-4 hover:bg-slate-750 transition">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-700 flex-shrink-0">
+                        {member.avatar_url ? (
+                          <img src={member.avatar_url} alt={member.full_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <User size={24} className="text-slate-500" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-white truncate">{member.full_name}</h3>
+                        {member.staff_role && <RoleBadge role={member.staff_role} size="sm" />}
+                      </div>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div className="bg-slate-700 rounded-lg p-2">
+                        <div className="text-xs text-slate-400">Valoración</div>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+                          <span className="text-white font-bold">{member.rating?.toFixed(1) || '0.0'}</span>
+                          <span className="text-xs text-slate-400">({member.total_reviews || 0})</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-700 rounded-lg p-2">
+                        <div className="text-xs text-slate-400">Fiabilidad</div>
+                        <div className="flex items-center gap-1 mt-1">
+                          <Shield size={14} className="text-emerald-400" />
+                          <span className="text-white font-bold">{member.reliability_score || 100}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Location */}
+                    {member.city && (
+                      <div className="flex items-center gap-1 text-sm text-slate-400 mb-3">
+                        <MapPin size={14} />
+                        {member.city}
+                      </div>
+                    )}
+
+                    {/* Phone */}
+                    {member.phone && (
+                      <div className="flex items-center gap-1 text-sm text-slate-300 mb-3">
+                        <Phone size={14} />
+                        <a href={`tel:${member.phone}`} className="hover:text-brand-orange">
+                          {member.phone}
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Skills */}
+                    {member.skills && member.skills.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {member.skills.slice(0, 3).map((skill, idx) => (
+                          <span key={idx} className="text-xs px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full">
+                            {skill}
+                          </span>
+                        ))}
+                        {member.skills.length > 3 && (
+                          <span className="text-xs px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full">
+                            +{member.skills.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedStaff(member);
+                          setShowProfile(true);
+                        }}
+                        className="flex-1 px-3 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition text-sm"
+                      >
+                        Ver Perfil
+                      </button>
+                      <button
+                        onClick={() => handleChatWith(member)}
+                        className="px-3 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition"
+                      >
+                        <MessageCircle size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Staff Profile Modal */}
+      {showProfile && selectedStaff && (
+        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4" onClick={() => setShowProfile(false)}>
+          <div className="bg-slate-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white">{selectedStaff.full_name}</h2>
+                <button onClick={() => setShowProfile(false)} className="p-2 hover:bg-slate-700 rounded-lg">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="flex items-start gap-4 mb-6">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-slate-700 flex-shrink-0">
+                  {selectedStaff.avatar_url ? (
+                    <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User size={32} className="text-slate-500" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
+                  {selectedStaff.staff_role && <RoleBadge role={selectedStaff.staff_role} />}
+                  <div className="flex items-center gap-4 mt-2">
+                    <StarRating rating={selectedStaff.rating} reviews={selectedStaff.total_reviews} />
+                    <div className="flex items-center gap-1 text-sm">
+                      <Shield size={16} className="text-emerald-400" />
+                      <span className="text-white font-bold">{selectedStaff.reliability_score || 100}</span>
+                      <span className="text-slate-400">fiabilidad</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {selectedStaff.bio && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Sobre mí</h3>
+                  <p className="text-white">{selectedStaff.bio}</p>
+                </div>
+              )}
+
+              {selectedStaff.skills && selectedStaff.skills.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Habilidades</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedStaff.skills.map((skill, idx) => (
+                      <SkillTag key={idx} skill={skill} selected={false} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(selectedStaff.city || selectedStaff.address) && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Ubicación</h3>
+                  <div className="flex items-start gap-2 text-white">
+                    <MapPin size={16} className="text-slate-400 mt-1" />
+                    <div>
+                      {selectedStaff.address && <div>{selectedStaff.address}</div>}
+                      {selectedStaff.city && <div>{selectedStaff.city}</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedStaff.phone && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Contacto</h3>
+                  <a href={`tel:${selectedStaff.phone}`} className="flex items-center gap-2 text-brand-orange hover:text-orange-400">
+                    <Phone size={16} />
+                    {selectedStaff.phone}
+                  </a>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => handleChatWith(selectedStaff)}
+                  className="flex-1 px-6 py-3 bg-brand-orange text-white rounded-xl hover:bg-orange-600 transition"
+                >
+                  <MessageCircle size={18} className="inline mr-2" />
+                  Enviar Mensaje
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// LOCAL SEARCH VIEW (para Staff)
+// ============================================
+const LocalSearchView = ({ currentStaffId, onClose, onSelectLocal }) => {
+  const [locales, setLocales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ city: '' });
+  const [selectedLocal, setSelectedLocal] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
+
+  useEffect(() => {
+    loadLocales();
+  }, [filters]);
+
+  const loadLocales = async () => {
+    setLoading(true);
+    try {
+      const { getAllLocals } = await import('./lib/supabase.js');
+      const data = await getAllLocals(filters);
+      setLocales(data || []);
+    } catch (error) {
+      console.error('Error loading locales:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChatWith = async (local) => {
+    try {
+      const { createOrGetConversation } = await import('./lib/supabase.js');
+      await createOrGetConversation(local.id, currentStaffId);
+      onSelectLocal(local);
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      alert('Error al iniciar chat');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900 z-50 overflow-y-auto">
+      <div className="min-h-screen p-4">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Building2 size={28} />
+              Buscar Locales
+            </h1>
+            <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg">
+              <X size={24} className="text-slate-400" />
+            </button>
+          </div>
+
+          {/* Filters */}
+          <div className="bg-slate-800 rounded-xl p-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Buscar por Ciudad</label>
+              <input
+                type="text"
+                value={filters.city}
+                onChange={(e) => setFilters({ ...filters, city: e.target.value })}
+                placeholder="Escribe una ciudad..."
+                className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-brand-orange focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Results */}
+          {loading ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {locales.length === 0 ? (
+                <div className="col-span-full text-center text-slate-400 py-12">
+                  No se encontraron locales con los filtros seleccionados
+                </div>
+              ) : (
+                locales.map((local) => (
+                  <div key={local.id} className="bg-slate-800 rounded-xl p-4 hover:bg-slate-750 transition">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-700 flex-shrink-0">
+                        {local.avatar_url ? (
+                          <img src={local.avatar_url} alt={local.business_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Building2 size={24} className="text-slate-500" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-white truncate">{local.business_name}</h3>
+                        {local.business_type && (
+                          <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full">
+                            {local.business_type}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Location */}
+                    {(local.city || local.address) && (
+                      <div className="flex items-start gap-1 text-sm text-slate-400 mb-3">
+                        <MapPin size={14} className="mt-0.5 flex-shrink-0" />
+                        <div className="truncate">
+                          {local.city && <div>{local.city}</div>}
+                          {local.address && <div className="text-xs">{local.address}</div>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Service Description */}
+                    {local.service_description && (
+                      <p className="text-sm text-slate-400 mb-3 line-clamp-2">
+                        {local.service_description}
+                      </p>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedLocal(local);
+                          setShowProfile(true);
+                        }}
+                        className="flex-1 px-3 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition text-sm"
+                      >
+                        Ver Perfil
+                      </button>
+                      <button
+                        onClick={() => handleChatWith(local)}
+                        className="px-3 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition"
+                      >
+                        <MessageCircle size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Local Profile Modal */}
+      {showProfile && selectedLocal && (
+        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4" onClick={() => setShowProfile(false)}>
+          <div className="bg-slate-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white">{selectedLocal.business_name}</h2>
+                <button onClick={() => setShowProfile(false)} className="p-2 hover:bg-slate-700 rounded-lg">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="flex items-start gap-4 mb-6">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-slate-700 flex-shrink-0">
+                  {selectedLocal.avatar_url ? (
+                    <img src={selectedLocal.avatar_url} alt={selectedLocal.business_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Building2 size={32} className="text-slate-500" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
+                  {selectedLocal.business_type && (
+                    <span className="inline-block mb-2 text-sm px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full">
+                      {selectedLocal.business_type}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {selectedLocal.bio && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Sobre el negocio</h3>
+                  <p className="text-white">{selectedLocal.bio}</p>
+                </div>
+              )}
+
+              {selectedLocal.service_description && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Tipo de comida / Servicio</h3>
+                  <p className="text-white">{selectedLocal.service_description}</p>
+                </div>
+              )}
+
+              {(selectedLocal.city || selectedLocal.address) && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-slate-400 mb-2">Ubicación</h3>
+                  <div className="flex items-start gap-2 text-white">
+                    <MapPin size={16} className="text-slate-400 mt-1" />
+                    <div>
+                      {selectedLocal.address && <div>{selectedLocal.address}</div>}
+                      {selectedLocal.city && <div>{selectedLocal.city}</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => handleChatWith(selectedLocal)}
+                  className="flex-1 px-6 py-3 bg-brand-orange text-white rounded-xl hover:bg-orange-600 transition"
+                >
+                  <MessageCircle size={18} className="inline mr-2" />
+                  Enviar Mensaje
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
 // VISTA LOCAL
 // ============================================
 const LocalView = ({ user, profile, onLogout, setProfile }) => {
@@ -1807,6 +2547,8 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
   const [reviewTargetStaff, setReviewTargetStaff] = useState(null);
   const [showReviewModalLocal, setShowReviewModalLocal] = useState(false);
   const [reviewTargetLocal, setReviewTargetLocal] = useState(null);
+  const [showStaffSearch, setShowStaffSearch] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [formData, setFormData] = useState({
     role: 'camarero', date: new Date().toISOString().split('T')[0],
     startTime: '20:00', endTime: '02:00', hourlyRate: 12,
@@ -2132,26 +2874,64 @@ const LocalView = ({ user, profile, onLogout, setProfile }) => {
     return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId || selectedJob?.id} onClose={() => setChatWith(null)} />;
   }
 
+  if (showStaffSearch) {
+    return <StaffSearchView
+      currentLocalId={user.id}
+      onClose={() => setShowStaffSearch(false)}
+      onSelectStaff={(staff) => {
+        setShowStaffSearch(false);
+        setChatWith({ id: staff.id, name: staff.full_name });
+      }}
+    />;
+  }
+
+  if (showProfileEdit) {
+    return <LocalProfileEditView
+      profile={profile}
+      onClose={() => setShowProfileEdit(false)}
+      onUpdate={(updatedProfile) => setProfile(updatedProfile)}
+    />;
+  }
+
   return (
     <div className="min-h-screen bg-brand-navy pb-20">
       <header className="bg-brand-navy-light border-b border-slate-700 p-4 pt-8">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-brand-orange rounded-full flex items-center justify-center">
+            <button onClick={() => setShowProfileEdit(true)} className="w-10 h-10 bg-brand-orange rounded-full flex items-center justify-center hover:bg-orange-600 transition">
               <Building2 size={20} className="text-white" />
-            </div>
+            </button>
             <div>
               <h1 className="text-lg font-bold text-white">{profile?.business_name || 'Mi Local'}</h1>
               <p className="text-slate-400 text-sm flex items-center gap-1"><MapPin size={12} /> {profile?.city || 'Sin ubicacion'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setShowStaffSearch(true)} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600" title="Buscar Empleados">
+              <Users size={20} className="text-slate-400" />
+            </button>
             <button onClick={() => handleToggleNotifications()} className="p-2 bg-slate-700 rounded-full relative hover:bg-slate-600">
               <Bell size={20} className="text-slate-400" />
               {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{notifications.length}</span>}
             </button>
             <button onClick={onLogout} className="p-2 text-slate-400"><LogOut size={20} /></button>
           </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowProfileEdit(true)}
+            className="flex-1 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition text-sm flex items-center justify-center gap-2"
+          >
+            <Edit3 size={16} />
+            Editar Perfil
+          </button>
+          <button
+            onClick={() => setShowStaffSearch(true)}
+            className="flex-1 px-4 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition text-sm flex items-center justify-center gap-2"
+          >
+            <Users size={16} />
+            Buscar Empleados
+          </button>
         </div>
       </header>
 
@@ -2667,6 +3447,7 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
   const [reviewTargetStaff, setReviewTargetStaff] = useState(null);
   const [showReviewModalLocal, setShowReviewModalLocal] = useState(false);
   const [reviewTargetLocal, setReviewTargetLocal] = useState(null);
+  const [showLocalSearch, setShowLocalSearch] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -2838,6 +3619,17 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
     return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId} onClose={() => setChatWith(null)} />;
   }
 
+  if (showLocalSearch) {
+    return <LocalSearchView
+      currentStaffId={user.id}
+      onClose={() => setShowLocalSearch(false)}
+      onSelectLocal={(local) => {
+        setShowLocalSearch(false);
+        setChatWith({ id: local.id, name: local.business_name });
+      }}
+    />;
+  }
+
   if (viewJob) {
     const applied = myApplications.some(app => app.job_id === viewJob.id && !['cancelled'].includes(app.status));
     const appliedStatus = myApplications.find(app => app.job_id === viewJob.id && !['cancelled'].includes(app.status))?.status;
@@ -2962,6 +3754,9 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setShowLocalSearch(true)} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600" title="Buscar Locales">
+              <Building2 size={20} className="text-slate-400" />
+            </button>
             <button
               onClick={() => { setShowCarnet(true); loadCarnetStats(); }}
               className="p-2 bg-gradient-to-r from-brand-orange to-red-500 rounded-full"
@@ -2974,6 +3769,17 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
             </button>
             <button onClick={onLogout} className="p-2 text-slate-400"><LogOut size={20} /></button>
           </div>
+        </div>
+
+        {/* Buscar Locales Button */}
+        <div className="mb-3">
+          <button
+            onClick={() => setShowLocalSearch(true)}
+            className="w-full px-4 py-2 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition text-sm flex items-center justify-center gap-2"
+          >
+            <Building2 size={16} />
+            Buscar Locales / Restaurantes
+          </button>
         </div>
 
         {/* Tabs */}

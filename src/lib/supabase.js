@@ -526,3 +526,109 @@ export const deleteFile = async (bucket, path) => {
 
   if (error) throw error
 }
+
+// ============================================
+// SEARCH / BROWSE
+// ============================================
+
+export const getAllStaff = async (filters = {}) => {
+  let query = supabase
+    .from('profiles')
+    .select('id, full_name, avatar_url, phone, staff_role, skills, bio, city, address, hourly_rate_min, hourly_rate_max, rating, total_reviews, reliability_score, total_shifts, latitude, longitude')
+    .eq('user_type', 'staff')
+    .order('rating', { ascending: false })
+
+  if (filters.role) {
+    query = query.eq('staff_role', filters.role)
+  }
+
+  if (filters.minRating) {
+    query = query.gte('rating', filters.minRating)
+  }
+
+  if (filters.minReliability) {
+    query = query.gte('reliability_score', filters.minReliability)
+  }
+
+  const { data, error } = await query.limit(filters.limit || 100)
+
+  if (error) throw error
+  return data
+}
+
+export const getAllLocals = async (filters = {}) => {
+  let query = supabase
+    .from('profiles')
+    .select('id, business_name, business_type, avatar_url, phone, address, city, bio, rating, total_reviews, latitude, longitude, menu_url, service_description')
+    .eq('user_type', 'local')
+    .order('rating', { ascending: false })
+
+  if (filters.businessType) {
+    query = query.eq('business_type', filters.businessType)
+  }
+
+  if (filters.city) {
+    query = query.ilike('city', `%${filters.city}%`)
+  }
+
+  const { data, error } = await query.limit(filters.limit || 100)
+
+  if (error) throw error
+  return data
+}
+
+export const getStaffProfile = async (staffId) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', staffId)
+    .eq('user_type', 'staff')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const getLocalProfile = async (localId) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', localId)
+    .eq('user_type', 'local')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// ============================================
+// CONVERSATIONS / DIRECT CHAT
+// ============================================
+
+export const createOrGetConversation = async (localId, staffId, jobId = null) => {
+  // Check if conversation exists
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('local_id', localId)
+    .eq('staff_id', staffId)
+    .single()
+
+  if (existing) {
+    return existing
+  }
+
+  // Create new conversation
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert({
+      local_id: localId,
+      staff_id: staffId,
+      job_id: jobId
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
