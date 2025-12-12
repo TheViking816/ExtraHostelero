@@ -117,6 +117,13 @@ async function subscribeToPushNotifications(userId) {
     const registration = await navigator.serviceWorker.ready;
     console.log('[subscribeToPushNotifications] Service worker ready:', registration);
 
+    // PRIMERO: Eliminar cualquier suscripción anterior del usuario
+    console.log('[subscribeToPushNotifications] Cleaning old subscriptions...');
+    await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId);
+
     console.log('[subscribeToPushNotifications] Subscribing to push manager...');
     // Subscribe to push notifications
     const subscription = await registration.pushManager.subscribe({
@@ -132,16 +139,13 @@ async function subscribeToPushNotifications(userId) {
     console.log('[subscribeToPushNotifications] Saving to database...');
     const { data, error } = await supabase
       .from('push_subscriptions')
-      .upsert({
+      .insert({
         user_id: userId,
         endpoint: subscriptionData.endpoint,
         p256dh: subscriptionData.keys.p256dh,
         auth: subscriptionData.keys.auth,
         user_agent: navigator.userAgent,
         active: true
-      }, {
-        onConflict: 'endpoint',
-        ignoreDuplicates: false
       })
       .select();
 
@@ -163,34 +167,31 @@ async function unsubscribeFromPushNotifications(userId) {
   try {
     console.log('[unsubscribeFromPushNotifications] Starting for userId:', userId);
 
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.getSubscription();
+    // 1. Desuscribir del navegador
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
 
-    if (subscription) {
-      console.log('[unsubscribeFromPushNotifications] Unsubscribing from push manager...');
-      await subscription.unsubscribe();
-
-      console.log('[unsubscribeFromPushNotifications] Deleting from database...');
-      // Eliminar completamente de la base de datos
-      const { error } = await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', userId)
-        .eq('endpoint', subscription.endpoint);
-
-      if (error) {
-        console.error('[unsubscribeFromPushNotifications] Database error:', error);
-        return false;
+      if (subscription) {
+        console.log('[unsubscribeFromPushNotifications] Unsubscribing from push manager...');
+        await subscription.unsubscribe();
+        console.log('[unsubscribeFromPushNotifications] Unsubscribed from browser');
       }
-    } else {
-      console.log('[unsubscribeFromPushNotifications] No active subscription found');
-      // Eliminar todas las suscripciones del usuario de la DB por si acaso
-      await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', userId);
     }
 
+    // 2. Eliminar TODAS las suscripciones del usuario de la base de datos
+    console.log('[unsubscribeFromPushNotifications] Deleting all subscriptions from database...');
+    const { error } = await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[unsubscribeFromPushNotifications] Database error:', error);
+      return false;
+    }
+
+    console.log('[unsubscribeFromPushNotifications] All subscriptions deleted from database');
     console.log('[unsubscribeFromPushNotifications] SUCCESS!');
     return true;
   } catch (error) {
@@ -277,12 +278,26 @@ const LoadingSpinner = () => (
 const PushNotificationPrompt = ({ onClose, onEnable }) => {
   const [enabling, setEnabling] = useState(false);
 
+  console.log('[Push Prompt] Component rendered');
+
   const handleEnable = async () => {
+    console.log('[Push Prompt] Activar button clicked');
     setEnabling(true);
-    const success = await onEnable();
-    setEnabling(false);
-    if (success) {
-      onClose();
+    try {
+      const success = await onEnable();
+      console.log('[Push Prompt] onEnable result:', success);
+      setEnabling(false);
+      if (success) {
+        console.log('[Push Prompt] Success! Closing popup...');
+        onClose();
+      } else {
+        console.log('[Push Prompt] Failed to enable notifications');
+        alert('No se pudieron activar las notificaciones. Por favor, verifica los permisos del navegador.');
+      }
+    } catch (error) {
+      console.error('[Push Prompt] Error enabling notifications:', error);
+      setEnabling(false);
+      alert('Error al activar notificaciones: ' + error.message);
     }
   };
 
@@ -5058,6 +5073,7 @@ export default function App() {
   const [onboardingType, setOnboardingType] = useState(null);
   const [showAddLocal, setShowAddLocal] = useState(false);
   const [showPushPrompt, setShowPushPrompt] = useState(false);
+  const [pushPromptDismissed, setPushPromptDismissed] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -5194,25 +5210,36 @@ export default function App() {
 
   // Check and prompt for push notifications after login
   useEffect(() => {
-    if (!user || !profile) return;
+    if (!user || !profile || pushPromptDismissed) return;
 
     const checkAndPromptPushNotifications = async () => {
+      console.log('[Push Prompt] Checking push status...');
       const status = await checkPushSubscriptionStatus();
+      console.log('[Push Prompt] Status:', status);
 
       // Only prompt if supported, not subscribed, and permission not denied
       if (status.supported && !status.subscribed && status.permission === 'default') {
-        // Show prompt after 10 seconds (don't be annoying immediately)
+        console.log('[Push Prompt] Will show prompt in 3 seconds...');
+        // Show prompt after 3 seconds (don't be annoying immediately)
         setTimeout(() => {
+          console.log('[Push Prompt] Showing prompt now');
           setShowPushPrompt(true);
-        }, 10000);
+        }, 3000);
       } else if (status.supported && !status.subscribed && status.permission === 'granted') {
+        console.log('[Push Prompt] Permission granted but not subscribed - subscribing automatically...');
         // Permission granted but not subscribed - subscribe automatically
         await subscribeToPushNotifications(profile.id);
+      } else {
+        console.log('[Push Prompt] Not showing prompt. Reasons:', {
+          supported: status.supported,
+          subscribed: status.subscribed,
+          permission: status.permission
+        });
       }
     };
 
     checkAndPromptPushNotifications();
-  }, [user, profile]);
+  }, [user, profile, pushPromptDismissed]);
 
   // Handle deep links from push notifications
   useEffect(() => {
@@ -5284,9 +5311,15 @@ export default function App() {
         />
         {showPushPrompt && (
           <PushNotificationPrompt
-            onClose={() => setShowPushPrompt(false)}
+            onClose={() => {
+              setShowPushPrompt(false);
+              setPushPromptDismissed(true);
+            }}
             onEnable={async () => {
               const success = await subscribeToPushNotifications(profile.id);
+              if (success) {
+                setPushPromptDismissed(true);
+              }
               return success;
             }}
           />
@@ -5301,9 +5334,15 @@ export default function App() {
         <StaffView user={user} profile={profile} onLogout={handleLogout} setProfile={setProfile} />
         {showPushPrompt && (
           <PushNotificationPrompt
-            onClose={() => setShowPushPrompt(false)}
+            onClose={() => {
+              setShowPushPrompt(false);
+              setPushPromptDismissed(true);
+            }}
             onEnable={async () => {
               const success = await subscribeToPushNotifications(profile.id);
+              if (success) {
+                setPushPromptDismissed(true);
+              }
               return success;
             }}
           />
