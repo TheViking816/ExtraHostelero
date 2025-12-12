@@ -985,6 +985,121 @@ const ChatView = ({ userId, otherUserId, otherUserName, jobId, onClose }) => {
 };
 
 // ============================================
+// BANDEJA DE CHATS (directos y por oferta)
+// ============================================
+const ChatsListView = ({ currentUserId, onClose, onOpenChat, title = 'Chats' }) => {
+  const [loading, setLoading] = useState(true);
+  const [chats, setChats] = useState([]);
+
+  const loadChats = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, created_at, content, job_id, sender_id, receiver_id, read_at, sender:profiles!messages_sender_id_fkey(id, full_name, business_name, avatar_url, user_type), receiver:profiles!messages_receiver_id_fkey(id, full_name, business_name, avatar_url, user_type)')
+        .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+
+      const map = new Map();
+      (data || []).forEach(m => {
+        const isSender = m.sender_id === currentUserId;
+        const other = isSender ? m.receiver : m.sender;
+        const otherId = isSender ? m.receiver_id : m.sender_id;
+        const key = `${otherId}:${m.job_id || 'direct'}`;
+
+        if (!map.has(key)) {
+          const displayName = other?.user_type === 'local'
+            ? (other?.business_name || other?.full_name || 'Local')
+            : (other?.full_name || other?.business_name || 'Usuario');
+
+          map.set(key, {
+            otherId,
+            otherName: displayName,
+            otherAvatar: other?.avatar_url || null,
+            jobId: m.job_id || null,
+            lastMessage: m.content,
+            lastAt: m.created_at,
+            unread: 0,
+          });
+        }
+
+        if (m.receiver_id === currentUserId && !m.read_at) {
+          map.get(key).unread += 1;
+        }
+      });
+
+      setChats(Array.from(map.values()));
+    } catch (err) {
+      console.error('Error loading chats:', err);
+      setChats([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadChats(); }, [currentUserId]);
+
+  return (
+    <div className="fixed inset-0 bg-brand-navy z-50 overflow-y-auto">
+      <div className="min-h-screen">
+        <header className="bg-brand-navy-light border-b border-slate-700 p-4 flex items-center gap-3 sticky top-0 z-10">
+          <button onClick={onClose} className="p-2 text-slate-400">
+            <ChevronLeft size={24} />
+          </button>
+          <h2 className="text-white font-bold flex-1">{title}</h2>
+          <button onClick={loadChats} className="p-2 text-slate-400 hover:text-slate-200" title="Recargar">
+            <Timer size={20} />
+          </button>
+        </header>
+
+        <div className="p-4">
+          {loading ? (
+            <LoadingSpinner />
+          ) : chats.length === 0 ? (
+            <div className="text-center py-12">
+              <MessageCircle size={48} className="mx-auto text-slate-600 mb-4" />
+              <p className="text-slate-500">No hay chats</p>
+              <p className="text-slate-600 text-sm">Inicia un chat desde un perfil</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {chats.map(c => (
+                <button
+                  key={`${c.otherId}-${c.jobId || 'direct'}`}
+                  onClick={() => onOpenChat(c)}
+                  className="w-full text-left bg-slate-800 rounded-2xl p-4 hover:bg-slate-750 transition flex items-center gap-3"
+                >
+                  <div className="w-12 h-12 bg-slate-700 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                    {c.otherAvatar ? <img src={c.otherAvatar} alt="" className="w-full h-full object-cover" /> : <User size={18} className="text-slate-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-white font-semibold truncate">{c.otherName}</p>
+                      {c.unread > 0 && (
+                        <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 flex-shrink-0">
+                          {c.unread}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-slate-400 text-sm truncate">{c.lastMessage}</p>
+                    <p className="text-slate-600 text-xs mt-1">
+                      {c.jobId ? 'Oferta' : 'Chat directo'} · {formatDateTime(c.lastAt)}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // PERFIL DE LOCAL (Modal)
 // ============================================
 const LocalProfileModal = ({ local, onClose, onChat }) => {
@@ -2645,6 +2760,8 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
   const [chatWith, setChatWith] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showChats, setShowChats] = useState(false);
   const [showReviewModalStaff, setShowReviewModalStaff] = useState(false);
   const [reviewTargetStaff, setReviewTargetStaff] = useState(null);
   const [showReviewModalLocal, setShowReviewModalLocal] = useState(false);
@@ -2786,10 +2903,12 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
       .from('notifications')
       .select('*')
       .eq('user_id', localId)
-      .is('read_at', null)
       .order('created_at', { ascending: false })
-      .limit(10);
-    if (data) setNotifications(data);
+      .limit(20);
+    if (data) {
+      setNotifications(data);
+      setUnreadNotifications(data.filter(n => !n.read_at).length);
+    }
   };
 
   const handleToggleNotifications = async (forceClose = false) => {
@@ -2800,6 +2919,7 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
     }
 
     // Al abrir, marcar notificaciones como leídas en backend
+    setShowNotifications(true);
     try {
       await supabase
         .from('notifications')
@@ -2812,7 +2932,6 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
 
     // Refrescar localmente (loadNotifications filtra read_at null así quedará vacío)
     await loadNotifications();
-    setShowNotifications(true);
   };
 
   useEffect(() => {
@@ -2973,7 +3092,22 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
   };
 
   if (chatWith) {
-    return <ChatView userId={localId} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId || selectedJob?.id} onClose={() => setChatWith(null)} />;
+    const effectiveJobId = Object.prototype.hasOwnProperty.call(chatWith, 'jobId') ? chatWith.jobId : selectedJob?.id;
+    return <ChatView userId={localId} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={effectiveJobId} onClose={() => setChatWith(null)} />;
+  }
+
+  if (showChats) {
+    return (
+      <ChatsListView
+        currentUserId={localId}
+        title="Chats"
+        onClose={() => setShowChats(false)}
+        onOpenChat={(c) => {
+          setShowChats(false);
+          setChatWith({ id: c.otherId, name: c.otherName, jobId: c.jobId });
+        }}
+      />
+    );
   }
 
   if (showStaffSearch) {
@@ -3039,9 +3173,12 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
             <button onClick={() => setShowStaffSearch(true)} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600" title="Buscar Empleados">
               <Users size={20} className="text-slate-400" />
             </button>
+            <button onClick={() => setShowChats(true)} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600" title="Chats">
+              <MessageCircle size={20} className="text-slate-300" />
+            </button>
             <button onClick={() => handleToggleNotifications()} className="p-2 bg-slate-700 rounded-full relative hover:bg-slate-600">
               <Bell size={20} className="text-slate-400" />
-              {notifications.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{notifications.length}</span>}
+              {unreadNotifications > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">{unreadNotifications}</span>}
             </button>
             <button onClick={onLogout} className="p-2 text-slate-400"><LogOut size={20} /></button>
           </div>
@@ -3502,7 +3639,7 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
           onClose={() => setShowStaffProfile(false)}
           onChat={(p) => {
             setShowStaffProfile(false);
-            setChatWith({ id: p.id, name: p.full_name });
+            setChatWith({ id: p.id, name: p.full_name, jobId: null });
           }}
         />
       </Modal>
@@ -3584,6 +3721,7 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
   const [showReviewModalLocal, setShowReviewModalLocal] = useState(false);
   const [reviewTargetLocal, setReviewTargetLocal] = useState(null);
   const [showLocalSearch, setShowLocalSearch] = useState(false);
+  const [showChats, setShowChats] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -3753,6 +3891,20 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
 
   if (chatWith) {
     return <ChatView userId={user.id} otherUserId={chatWith.id} otherUserName={chatWith.name} jobId={chatWith.jobId} onClose={() => setChatWith(null)} />;
+  }
+
+  if (showChats) {
+    return (
+      <ChatsListView
+        currentUserId={user.id}
+        title="Chats"
+        onClose={() => setShowChats(false)}
+        onOpenChat={(c) => {
+          setShowChats(false);
+          setChatWith({ id: c.otherId, name: c.otherName, jobId: c.jobId });
+        }}
+      />
+    );
   }
 
   if (showLocalSearch) {
@@ -4313,6 +4465,10 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
         <button onClick={() => setShowProfile(true)} className="flex flex-col items-center gap-1 text-slate-500">
           <User size={24} />
           <span className="text-xs">Perfil</span>
+        </button>
+        <button onClick={() => setShowChats(true)} className="flex flex-col items-center gap-1 text-slate-500">
+          <MessageCircle size={24} />
+          <span className="text-xs">Chats</span>
         </button>
         <button onClick={() => { setShowCarnet(true); loadCarnetStats(); }} className="flex flex-col items-center gap-1 text-slate-500">
           <QrCode size={24} />
