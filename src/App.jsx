@@ -72,6 +72,24 @@ const formatDateTime = (dateStr) => {
 // PUSH NOTIFICATION UTILITIES
 // ============================================
 const VAPID_PUBLIC_KEY = 'BFD3EPrf6t6d-TVypeh-KHOvRsamoYwihZ9Ilb7uB20D5xlVQYVgfEoXgMT47g1arT0mOwvK-sgiuVsnKyDnylw'
+const PUSH_OPT_OUT_KEY = 'push_notifications_opt_out_v1'
+
+function getPushOptOut() {
+  try {
+    return localStorage.getItem(PUSH_OPT_OUT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function setPushOptOut(optedOut) {
+  try {
+    if (optedOut) localStorage.setItem(PUSH_OPT_OUT_KEY, '1')
+    else localStorage.removeItem(PUSH_OPT_OUT_KEY)
+  } catch {
+    // ignore
+  }
+}
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -104,7 +122,9 @@ async function subscribeToPushNotifications(userId) {
 
     console.log('[subscribeToPushNotifications] Requesting notification permission...');
     // Request notification permission
-    const permission = await Notification.requestPermission();
+    const permission = Notification.permission === 'default'
+      ? await Notification.requestPermission()
+      : Notification.permission;
     console.log('[subscribeToPushNotifications] Permission result:', permission);
 
     if (permission !== 'granted') {
@@ -126,10 +146,13 @@ async function subscribeToPushNotifications(userId) {
 
     console.log('[subscribeToPushNotifications] Subscribing to push manager...');
     // Subscribe to push notifications
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-    });
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
     console.log('[subscribeToPushNotifications] Push subscription created:', subscription);
 
     // Save subscription to database
@@ -4299,6 +4322,7 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
         return;
       }
 
+      setPushOptOut(false);
       console.log('Calling subscribeToPushNotifications with userId:', profile.id);
       const success = await subscribeToPushNotifications(profile.id);
       console.log('subscribeToPushNotifications result:', success);
@@ -4334,6 +4358,7 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
       console.log('unsubscribeFromPushNotifications result:', success);
 
       if (success) {
+        setPushOptOut(true);
         setPushEnabled(false);
         await checkPushStatus(); // Recheck status
         alert('✅ Notificaciones deshabilitadas correctamente.');
@@ -5213,6 +5238,11 @@ export default function App() {
     if (!user || !profile || pushPromptDismissed) return;
 
     const checkAndPromptPushNotifications = async () => {
+      if (getPushOptOut()) {
+        console.log('[Push Prompt] Opt-out set; skipping prompt');
+        return;
+      }
+
       console.log('[Push Prompt] Checking push status...');
       const status = await checkPushSubscriptionStatus();
       console.log('[Push Prompt] Status:', status);
@@ -5225,10 +5255,6 @@ export default function App() {
           console.log('[Push Prompt] Showing prompt now');
           setShowPushPrompt(true);
         }, 3000);
-      } else if (status.supported && !status.subscribed && status.permission === 'granted') {
-        console.log('[Push Prompt] Permission granted but not subscribed - subscribing automatically...');
-        // Permission granted but not subscribed - subscribe automatically
-        await subscribeToPushNotifications(profile.id);
       } else {
         console.log('[Push Prompt] Not showing prompt. Reasons:', {
           supported: status.supported,
@@ -5316,6 +5342,7 @@ export default function App() {
               setPushPromptDismissed(true);
             }}
             onEnable={async () => {
+              setPushOptOut(false);
               const success = await subscribeToPushNotifications(profile.id);
               if (success) {
                 setPushPromptDismissed(true);
@@ -5339,6 +5366,7 @@ export default function App() {
               setPushPromptDismissed(true);
             }}
             onEnable={async () => {
+              setPushOptOut(false);
               const success = await subscribeToPushNotifications(profile.id);
               if (success) {
                 setPushPromptDismissed(true);
