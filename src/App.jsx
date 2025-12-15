@@ -114,6 +114,113 @@ const JobTypeBadge = ({ type }) => {
   );
 };
 
+const JobConditionsPanel = ({ job, localName, onViewLocal }) => {
+  if (!job) return null;
+  const addressLabel = job.address || job.local?.address || 'Ubicación no especificada';
+  const cityLabel = job.local?.city || '';
+  const dateLabel = job.shift_date ? formatDate(job.shift_date) : 'Fecha no definida';
+  const startLabel = job.start_time?.slice(0, 5);
+  const endLabel = job.end_time?.slice(0, 5);
+  const timeLabel = startLabel && endLabel ? `${startLabel} - ${endLabel}` : 'Horario no definido';
+  const hourly = job.hourly_rate ? `${job.hourly_rate}EUR` : '0EUR';
+  const trialDaysOffFixed = Array.isArray(job.trial_days_off_fixed) ? job.trial_days_off_fixed : [];
+
+  return (
+    <div className="bg-brand-navy-light rounded-2xl p-4 space-y-3 border border-slate-700">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center gap-2">
+            <JobTypeBadge type={job.job_type} />
+            <RoleBadge role={job.role_required} size="sm" />
+          </div>
+          <p className="text-slate-300 text-sm flex flex-wrap items-center gap-2">
+            <MapPin size={14} className="text-brand-orange" />
+            <span>
+              {addressLabel}
+              {cityLabel && ` · ${cityLabel}`}
+              {!cityLabel && localName && ` · ${localName}`}
+            </span>
+          </p>
+        </div>
+        {onViewLocal && (
+          <button
+            onClick={onViewLocal}
+            className="text-brand-orange text-sm underline hover:text-white transition-colors"
+          >
+            Ver local
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-4 text-slate-300 text-sm">
+        <span className="flex items-center gap-1">
+          <CalendarDays size={14} className="text-brand-orange" />
+          {dateLabel}
+        </span>
+        <span className="flex items-center gap-1">
+          <Clock size={14} className="text-brand-orange" />
+          {timeLabel}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-3xl font-bold text-white">{hourly}</span>
+        <span className="text-slate-400">/h</span>
+      </div>
+
+      {job.job_type === 'prueba' && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+          <p className="text-amber-300 text-sm font-semibold">
+            {onViewLocal ? 'Condiciones de selección' : 'Condiciones si te contratan'}
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-slate-200 text-sm">
+            <span>Turno: {job.trial_shift_period === 'manana' ? 'Mañana' : job.trial_shift_period === 'tarde' ? 'Tarde' : 'No especificado'}</span>
+            <span>Horario: {job.trial_schedule || 'No especificado'}</span>
+            <span>Sueldo mes: {job.trial_salary_month ? `${job.trial_salary_month} EUR` : 'No especificado'}</span>
+            <span>Horas contrato: {job.trial_contract_hours || 'No especificado'}</span>
+            <span>Días libres: {job.trial_days_off || 'No especificado'}</span>
+            <span>Tipo días libres: {job.trial_days_off_type || 'No especificado'}</span>
+            {job.trial_days_off_type === 'fijos' && (
+              <span className="col-span-2">
+                Días libres fijos: {trialDaysOffFixed.length > 0 ? trialDaysOffFixed.join(', ') : 'No especificado'}
+              </span>
+            )}
+          </div>
+          {job.evaluation_criteria?.length > 0 && (
+            <div className="space-y-1 text-slate-100 text-xs">
+              <p className="text-slate-300 text-xs font-semibold">Criterios de evaluación</p>
+              <div className="flex flex-wrap gap-1">
+                {job.evaluation_criteria.map((criteria, idx) => (
+                  <span key={idx} className="bg-slate-800 text-slate-200 text-xs px-2 py-0.5 rounded-full border border-slate-700">
+                    {criteria}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {job.skills_required?.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {job.skills_required.map(skill => (
+            <span key={skill} className="bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded-full border border-slate-700">
+              {skill}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {job.notes && (
+        <div className="bg-slate-800 rounded-xl p-3">
+          <p className="text-white font-semibold text-sm mb-1">Notas</p>
+          <p className="text-slate-300 text-sm">{job.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center p-8">
     <Loader2 size={32} className="text-brand-orange animate-spin" />
@@ -536,6 +643,23 @@ const StaffProfileModal = ({ profile, onClose, onChat }) => {
             {profile.skills.slice(0, 12).map(skill => (
               <span key={skill} className="bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded-full border border-slate-700">{skill}</span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {profile.cv_url && (
+        <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-3">
+          <FileText size={16} className="text-brand-orange" />
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-semibold">CV</p>
+            <a
+              href={profile.cv_url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-slate-300 text-sm underline decoration-slate-500 hover:text-white"
+            >
+              Abrir documento
+            </a>
           </div>
         </div>
       )}
@@ -2837,7 +2961,7 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
   const loadStaffProfile = async (staffId) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, avatar_url, staff_role, skills, bio, city, address, hourly_rate_min, hourly_rate_max, rating, total_reviews')
+      .select('id, full_name, avatar_url, staff_role, skills, bio, city, address, hourly_rate_min, hourly_rate_max, rating, total_reviews, cv_url, cv_text')
       .eq('id', staffId)
       .single();
     if (error) {
@@ -3202,18 +3326,24 @@ const LocalView = ({ user, profile, locals = [], activeLocalId, onSwitchLocal, o
       </header>
 
       {/* Vista de candidatos de un job */}
-      {selectedJob ? (
-        <div className="p-4">
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => { setSelectedJob(null); setApplications([]); }} className="p-2 bg-slate-700 rounded-full"><ChevronLeft size={20} className="text-white" /></button>
-            <div>
-              <h2 className="text-white font-bold">Candidatos</h2>
-              <p className="text-slate-400 text-sm"><JobTypeBadge type={selectedJob.job_type} /> {ROLES[selectedJob.role_required]?.label} - {formatDate(selectedJob.shift_date)}</p>
+        {selectedJob ? (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setSelectedJob(null); setApplications([]); }} className="p-2 bg-slate-700 rounded-full">
+                <ChevronLeft size={20} className="text-white" />
+              </button>
+              <div>
+                <h2 className="text-white font-bold">Candidatos</h2>
+                <p className="text-slate-400 text-sm">
+                  <JobTypeBadge type={selectedJob.job_type} /> {ROLES[selectedJob.role_required]?.label} · {formatDate(selectedJob.shift_date)}
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Chats para esta oferta (si existen) */}
-          {jobChats.length > 0 && (
+            <JobConditionsPanel job={selectedJob} localName={profile?.business_name} />
+
+            {/* Chats para esta oferta (si existen) */}
+            {jobChats.length > 0 && (
             <div className="bg-slate-800 rounded-2xl p-4 mb-4">
               <h4 className="text-white font-bold mb-3">Chats relacionados con esta oferta</h4>
               <div className="space-y-2">
@@ -3934,63 +4064,10 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
         </header>
 
         <div className="p-4 space-y-4">
-          <div className="bg-brand-navy-light rounded-2xl p-4 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <JobTypeBadge type={viewJob.job_type} />
-                  <RoleBadge role={viewJob.role_required} size="sm" />
-                </div>
-                <p className="text-slate-300 text-sm flex items-center gap-2">
-                  <MapPin size={14} className="text-brand-orange" />
-                  {(viewJob.address || viewJob.local?.address || 'Ubicación no especificada')} · {(viewJob.local?.city || '')}
-                </p>
-              </div>
-              <button onClick={() => openLocalProfile(viewJob.local_id, viewJob.local)} className="text-brand-orange text-sm underline">Ver local</button>
-            </div>
-
-            <div className="flex items-center gap-4 text-slate-300 text-sm">
-              <span className="flex items-center gap-1"><CalendarDays size={14} className="text-brand-orange" />{formatDate(viewJob.shift_date)}</span>
-              <span className="flex items-center gap-1"><Clock size={14} className="text-brand-orange" />{viewJob.start_time?.slice(0,5)} - {viewJob.end_time?.slice(0,5)}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-3xl font-bold text-white">{viewJob.hourly_rate}EUR</span>
-              <span className="text-slate-400">/h</span>
-            </div>
-
-            {viewJob.job_type === 'prueba' && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
-                <p className="text-amber-300 text-sm font-semibold">Condiciones si te contratan:</p>
-                <div className="grid grid-cols-2 gap-2 text-slate-200 text-sm">
-                  <span>Turno: {viewJob.trial_shift_period === 'manana' ? 'Mañana' : viewJob.trial_shift_period === 'tarde' ? 'Tarde' : 'No especificado'}</span>
-                  <span>Horario: {viewJob.trial_schedule || 'No especificado'}</span>
-                  <span>Sueldo mes: {viewJob.trial_salary_month ? `${viewJob.trial_salary_month} EUR` : 'No especificado'}</span>
-                  <span>Horas contrato: {viewJob.trial_contract_hours || 'No especificado'}</span>
-                  <span>Dias libres: {viewJob.trial_days_off || 'No especificado'}</span>
-                  <span>Tipo dias libres: {viewJob.trial_days_off_type || 'No especificado'}</span>
-                  {viewJob.trial_days_off_type === 'fijos' && (
-                    <span className="col-span-2">Dias libres fijos: {viewJob.trial_days_off_fixed?.length ? viewJob.trial_days_off_fixed.join(', ') : 'No especificado'}</span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {viewJob.skills_required?.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {viewJob.skills_required.map(skill => (
-                  <span key={skill} className="bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded-full border border-slate-700">{skill}</span>
-                ))}
-              </div>
-            )}
-
-            {viewJob.notes && (
-              <div className="bg-slate-800 rounded-xl p-3">
-                <p className="text-white font-semibold text-sm mb-1">Notas</p>
-                <p className="text-slate-300 text-sm">{viewJob.notes}</p>
-              </div>
-            )}
-          </div>
+          <JobConditionsPanel
+            job={viewJob}
+            onViewLocal={() => openLocalProfile(viewJob.local_id, viewJob.local)}
+          />
 
           <div className="space-y-2">
             <button
@@ -4015,16 +4092,17 @@ const StaffView = ({ user, profile, onLogout, setProfile }) => {
             )}
           </div>
         </div>
-      <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
-        <LocalProfileModal
-          local={localProfileView}
-          onClose={() => setShowLocalProfile(false)}
-          onChat={(l) => {
-            setShowLocalProfile(false);
-            setChatWith({ id: l.id, name: l.business_name });
-          }}
-        />
-      </Modal>
+
+        <Modal isOpen={showLocalProfile} onClose={() => setShowLocalProfile(false)} title="Perfil del Local" size="lg">
+          <LocalProfileModal
+            local={localProfileView}
+            onClose={() => setShowLocalProfile(false)}
+            onChat={(l) => {
+              setShowLocalProfile(false);
+              setChatWith({ id: l.id, name: l.business_name });
+            }}
+          />
+        </Modal>
       </div>
     );
   }
