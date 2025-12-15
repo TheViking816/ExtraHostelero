@@ -47,7 +47,9 @@ export default defineConfig({
               }
             }
           }
-        ]
+        ],
+        // Include custom service worker code for push notifications
+        importScripts: ['sw-custom.js']
       }
     })
   ],

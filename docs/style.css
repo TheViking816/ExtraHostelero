@@ -1,0 +1,304 @@
+/*
+ * ExtraHostelero Landing Page Styles
+ *
+ * This stylesheet defines a clean, modern theme inspired by the
+ * ExtraHostelero application. Colours, typography and spacing are
+ * derived from the original Tailwind configuration used in the app.
+ *
+ * Variables make it easy to tweak colours or fonts later on. Each
+ * section uses flexible layouts that gracefully adapt to different
+ * screen sizes. The design emphasises clarity and ease‑of‑use while
+ * keeping the dark/night aesthetic found throughout the product.
+ */
+
+/* Colour palette based on tailwind.config.js from the application */
+:root {
+  --color-orange: #FF6B35;
+  --color-orange-dark: #E55A2B;
+  --color-navy: #0F172A;
+  --color-navy-light: #1E293B;
+  --color-gold: #FFB800;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-white: #FFFFFF;
+  --color-muted: #94A3B8;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+/* Global resets */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--color-navy);
+  color: var(--color-white);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Utility container to centre content and constrain width */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* Navigation bar */
+.navbar {
+  background-color: var(--color-navy);
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.navbar .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0.5rem;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-orange);
+  letter-spacing: -0.5px;
+}
+
+.nav-links {
+  list-style: none;
+  display: flex;
+  gap: 1rem;
+}
+
+.nav-links li a {
+  color: var(--color-muted);
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: color 0.3s ease;
+}
+
+.nav-links li a:hover {
+  color: var(--color-orange);
+}
+
+/* Hero section */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 5rem 1rem 4rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero h1 {
+  font-size: 2.75rem;
+  font-weight: 800;
+  color: var(--color-orange);
+  margin-bottom: 0.5rem;
+}
+
+.hero p {
+  font-size: 1.25rem;
+  max-width: 700px;
+  color: var(--color-muted);
+  margin-bottom: 2rem;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.8rem 1.75rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  border: none;
+}
+
+.btn-primary {
+  background-color: var(--color-orange);
+  color: var(--color-navy);
+}
+.btn-primary:hover {
+  background-color: var(--color-orange-dark);
+}
+
+.btn-secondary {
+  background-color: var(--color-navy-light);
+  color: var(--color-orange);
+  border: 1px solid var(--color-orange);
+}
+.btn-secondary:hover {
+  background-color: var(--color-orange);
+  color: var(--color-navy);
+}
+
+/* Section styles */
+.section {
+  padding: 4rem 1rem;
+}
+
+.section-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.section-subtitle {
+  text-align: center;
+  color: var(--color-muted);
+  max-width: 800px;
+  margin: 0 auto 2.5rem;
+  font-size: 1rem;
+}
+
+.features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  justify-content: center;
+}
+
+.feature-card {
+  background-color: var(--color-navy-light);
+  padding: 2rem;
+  border-radius: 1rem;
+  width: 280px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+
+.feature-card h3 {
+  font-size: 1.25rem;
+  color: var(--color-orange);
+  margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+/* Gallery styles */
+.gallery {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  padding: 2rem 0;
+}
+
+.gallery img {
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease;
+}
+
+.gallery img:hover {
+  transform: scale(1.03);
+}
+
+/* Call‑to‑action section */
+.cta {
+  background-color: var(--color-navy-light);
+  text-align: center;
+  padding: 4rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cta h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  margin-bottom: 1rem;
+}
+
+.cta p {
+  color: var(--color-muted);
+  margin-bottom: 2rem;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+  font-size: 1rem;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.125rem;
+  border-radius: 9999px;
+  background-color: var(--color-orange);
+  color: var(--color-navy);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.btn-large:hover {
+  background-color: var(--color-orange-dark);
+}
+
+/* Footer styles */
+footer {
+  background-color: var(--color-navy-light);
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+footer a {
+  color: var(--color-orange);
+  margin: 0 0.5rem;
+  transition: color 0.3s ease;
+}
+
+footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .hero h1 {
+    font-size: 2.25rem;
+  }
+  .hero p {
+    font-size: 1.1rem;
+  }
+  .section-title {
+    font-size: 1.75rem;
+  }
+  .feature-card {
+    width: 100%;
+  }
+}
